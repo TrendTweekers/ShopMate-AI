@@ -1,0 +1,4 @@
+# Ignore git worktrees created by Claude Code — they contain copies of
+# shopify.web.toml which cause "conflicting configurations" errors when
+# the Shopify CLI scans subdirectories during `shopify app deploy`.
+.claude/
