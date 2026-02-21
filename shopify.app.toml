@@ -2,7 +2,7 @@
 
 client_id = "9b1e966350cee0ffb9d2b6f46719da03"
 name = "ShopMate AI"
-application_url = "https://gibson-mail-modifications-aspect.trycloudflare.com"
+application_url = "https://shopmate-ai-helper-production.up.railway.app"
 embedded = true
 
 [build]
@@ -28,12 +28,11 @@ use_legacy_install_flow = false
 
 [auth]
 redirect_urls = [
-  "https://autumn-amenities-eggs-casino.trycloudflare.com/auth/callback",
-  "https://autumn-amenities-eggs-casino.trycloudflare.com/auth/shopify/callback"
+  "https://shopmate-ai-helper-production.up.railway.app/auth/callback",
+  "https://shopmate-ai-helper-production.up.railway.app/auth/shopify/callback"
 ]
 
 [app_proxy]
-url = "https://gibson-mail-modifications-aspect.trycloudflare.com/apps/shopmate"
+url = "https://shopmate-ai-helper-production.up.railway.app/apps/shopmate"
 subpath = "shopmate"
 prefix = "apps"
-
