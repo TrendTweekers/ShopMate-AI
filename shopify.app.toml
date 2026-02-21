@@ -35,11 +35,18 @@ redirect_urls = [
 ]
 
 [app_proxy]
-# Shopify forwards: myshopify.com/{prefix}/{subpath}/* → {url}/{prefix}/{subpath}/*
-# The url must be the backend ROOT — Shopify appends the full path automatically.
-# Previous value included /apps/shopmate in the url, causing the forwarded path to
-# become /apps/shopmate/shopmate/chat (double segment) which breaks HMAC validation
-# because the signature is computed over the actual forwarded URL.
-url = "https://shopmate-ai-helper-production.up.railway.app"
+# Shopify proxy forwarding rule (from docs):
+#   storefront: myshopify.com/{prefix}/{subpath}/{rest}
+#   forwarded:  {url}/{rest}
+#
+# Example from Shopify docs:
+#   prefix = "apps", subpath = "awesome_reviews", url = "https://proxy-domain.com/proxy"
+#   /apps/awesome_reviews/extra/path → https://proxy-domain.com/proxy/extra/path
+#
+# For ShopMate: storefront /apps/shopmate/chat → Railway /apps/shopmate/chat
+#   prefix  = "apps"
+#   subpath = "shopmate"       → Shopify matches /apps/shopmate/*
+#   url     = "https://...railway.app/apps/shopmate"  → Shopify appends /chat → /apps/shopmate/chat ✓
+url = "https://shopmate-ai-helper-production.up.railway.app/apps/shopmate"
 prefix = "apps"
-subpath = "shopmate/chat"
+subpath = "shopmate"
