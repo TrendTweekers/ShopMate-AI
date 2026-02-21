@@ -19,7 +19,13 @@
       position: {{ block.settings.position | json }},
       greeting: {{ block.settings.greeting_message | json }},
       botName: {{ block.settings.bot_name | json }},
-      apiBase: "https://shopmate-ai-helper-production.up.railway.app"
+      // Use an empty apiBase so chat-widget.js builds a relative URL:
+      //   "" + "/apps/shopmate/chat" → "/apps/shopmate/chat"
+      // The browser sends this to the storefront (myshopify.com), which
+      // Shopify's App Proxy then forwards — with HMAC query params attached —
+      // to the Railway backend. Calling Railway directly bypasses the proxy
+      // and causes 401 Unauthorized because there is no HMAC to validate.
+      apiBase: ""
     };
   </script>
   {{ 'chat-widget.js' | asset_url | script_tag }}
