@@ -1,14 +1,17 @@
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
+import { useLoaderData } from "react-router";
 import ChatWidget from "~/components/storefront/ChatWidget";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
-  return null;
+  const { session } = await authenticate.admin(request);
+  return { shop: session.shop };
 };
 
 export default function WidgetPreview() {
+  const { shop } = useLoaderData<typeof loader>();
+
   return (
     <div className="max-w-5xl space-y-6">
       <div>
@@ -47,7 +50,7 @@ export default function WidgetPreview() {
 
             {/* Widget overlay */}
             <div className="absolute inset-0">
-              <ChatWidget />
+              <ChatWidget shop={shop} />
             </div>
           </div>
         </div>

@@ -1,35 +1,168 @@
-import { useState } from "react";
-import { MessageCircle, X, Package, Sparkles, RotateCcw, Send, ArrowLeft, ShoppingCart } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { MessageCircle, X, Package, Sparkles, RotateCcw, Send, ArrowLeft, ShoppingCart, RefreshCw, ExternalLink } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 type View = "home" | "tracking" | "recommendations" | "chat";
 
-const sampleProducts = [
-  { id: 1, name: "Classic Hoodie", price: "$59.00", image: "🧥", rating: "4.8" },
-  { id: 2, name: "Canvas Sneakers", price: "$89.00", image: "👟", rating: "4.6" },
-  { id: 3, name: "Leather Belt", price: "$35.00", image: "🪢", rating: "4.9" },
-];
+interface Product {
+  id: string;
+  title: string;
+  price: string;
+  image: string | null;
+  url: string;
+}
 
-export default function ChatWidget() {
+interface Message {
+  role: "bot" | "user";
+  text: string;
+  products?: Product[];
+  error?: boolean;
+}
+
+interface ChatWidgetProps {
+  shop?: string;
+}
+
+const SESSION_KEY = "shopmate_conversation_id";
+
+function TypingIndicator() {
+  return (
+    <div className="flex justify-start">
+      <div className="bg-muted px-3 py-2 rounded-xl rounded-bl-sm flex items-center gap-1">
+        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:0ms]" />
+        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:150ms]" />
+        <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:300ms]" />
+      </div>
+    </div>
+  );
+}
+
+function ProductCard({ product }: { product: Product }) {
+  return (
+    <a
+      href={product.url || "#"}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="border border-border rounded-lg p-2.5 flex items-center gap-2.5 hover:bg-muted/50 transition-colors no-underline"
+    >
+      <div className="w-10 h-10 rounded-md bg-muted flex items-center justify-center flex-shrink-0 overflow-hidden">
+        {product.image ? (
+          <img src={product.image} alt={product.title} className="w-full h-full object-cover" />
+        ) : (
+          <ShoppingCart className="w-4 h-4 text-muted-foreground" />
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-medium text-foreground truncate">{product.title}</p>
+        <p className="text-xs font-semibold text-primary mt-0.5">{product.price}</p>
+      </div>
+      <ExternalLink className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+    </a>
+  );
+}
+
+export default function ChatWidget({ shop }: ChatWidgetProps) {
   const [open, setOpen] = useState(true);
   const [view, setView] = useState<View>("home");
-  const [messages, setMessages] = useState<{ role: "bot" | "user"; text: string }[]>([
+  const [messages, setMessages] = useState<Message[]>([
     { role: "bot", text: "Hi! 👋 I'm ShopMate. How can I help you today?" },
   ]);
   const [input, setInput] = useState("");
   const [orderNumber, setOrderNumber] = useState("");
   const [orderEmail, setOrderEmail] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const sendMessage = () => {
-    if (!input.trim()) return;
-    setMessages((m) => [...m, { role: "user", text: input }]);
-    setInput("");
-    setTimeout(() => {
+  // Load conversationId from sessionStorage on mount
+  useEffect(() => {
+    const saved = sessionStorage.getItem(SESSION_KEY);
+    if (saved) setConversationId(saved);
+  }, []);
+
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isLoading]);
+
+  const sendMessageToAPI = async (text: string, retryCount = 0): Promise<void> => {
+    setIsLoading(true);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: text,
+          conversationId,
+          shop,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Server error: ${res.status}`);
+      }
+
+      const data = await res.json();
+
+      // Persist conversationId
+      if (data.conversationId) {
+        setConversationId(data.conversationId);
+        sessionStorage.setItem(SESSION_KEY, data.conversationId);
+      }
+
       setMessages((m) => [
         ...m,
-        { role: "bot", text: "Thanks for your message! Let me look into that for you." },
+        {
+          role: "bot",
+          text: data.reply,
+          products: data.products,
+        },
       ]);
-    }, 800);
+    } catch (err) {
+      console.error("Chat error:", err);
+      setMessages((m) => [
+        ...m,
+        {
+          role: "bot",
+          text: "Sorry, I'm having trouble connecting right now.",
+          error: true,
+        },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const sendMessage = () => {
+    if (!input.trim() || isLoading) return;
+    const text = input.trim();
+    setMessages((m) => [...m, { role: "user", text }]);
+    setInput("");
+    if (view === "home") setView("chat");
+    sendMessageToAPI(text);
+  };
+
+  const handleRetry = (text: string) => {
+    // Remove the error message and resend
+    setMessages((m) => m.slice(0, -1));
+    sendMessageToAPI(text);
+  };
+
+  const handleTrackOrder = () => {
+    if (!orderNumber.trim()) return;
+    const trackingMessage = `Track order ${orderNumber}${orderEmail ? ` for email ${orderEmail}` : ""}`;
+    setMessages((m) => [...m, { role: "user", text: trackingMessage }]);
+    setView("chat");
+    sendMessageToAPI(trackingMessage);
+    setOrderNumber("");
+    setOrderEmail("");
+  };
+
+  const handleQuickAction = (label: string) => {
+    setMessages((m) => [...m, { role: "user", text: label }]);
+    setView("chat");
+    sendMessageToAPI(label);
   };
 
   return (
@@ -46,7 +179,10 @@ export default function ChatWidget() {
             <div className="bg-primary px-4 py-3 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-2">
                 {view !== "home" && (
-                  <button onClick={() => setView("home")} className="text-primary-foreground/80 hover:text-primary-foreground">
+                  <button
+                    onClick={() => setView("home")}
+                    className="text-primary-foreground/80 hover:text-primary-foreground"
+                  >
                     <ArrowLeft className="w-4 h-4" />
                   </button>
                 )}
@@ -58,7 +194,10 @@ export default function ChatWidget() {
                   <p className="text-[10px] text-primary-foreground/70">Always here to help</p>
                 </div>
               </div>
-              <button onClick={() => setOpen(false)} className="text-primary-foreground/80 hover:text-primary-foreground">
+              <button
+                onClick={() => setOpen(false)}
+                className="text-primary-foreground/80 hover:text-primary-foreground"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -71,17 +210,31 @@ export default function ChatWidget() {
                     <p className="text-sm text-foreground">Hi! 👋 How can I help you today?</p>
                   </div>
 
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Quick Actions</p>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Quick Actions
+                  </p>
                   <div className="space-y-2">
                     {[
-                      { label: "Track my order", icon: Package, action: () => setView("tracking") },
-                      { label: "Product recommendations", icon: Sparkles, action: () => setView("recommendations") },
-                      { label: "Returns & exchanges", icon: RotateCcw, action: () => setView("chat") },
+                      {
+                        label: "Track my order",
+                        icon: Package,
+                        action: () => setView("tracking"),
+                      },
+                      {
+                        label: "Product recommendations",
+                        icon: Sparkles,
+                        action: () => handleQuickAction("Show me some product recommendations"),
+                      },
+                      {
+                        label: "Returns & exchanges",
+                        icon: RotateCcw,
+                        action: () => handleQuickAction("I need help with a return or exchange"),
+                      },
                     ].map((a) => (
                       <button
                         key={a.label}
                         onClick={a.action}
-                        className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-surface-hover transition-colors text-left"
+                        className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors text-left"
                       >
                         <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center flex-shrink-0">
                           <a.icon className="w-4 h-4 text-accent-foreground" />
@@ -98,73 +251,36 @@ export default function ChatWidget() {
                   <p className="text-sm text-foreground font-medium">Track Your Order</p>
                   <div className="space-y-3">
                     <div>
-                      <label className="text-xs font-medium text-muted-foreground">Order Number</label>
+                      <label className="text-xs font-medium text-muted-foreground">
+                        Order Number
+                      </label>
                       <input
                         value={orderNumber}
                         onChange={(e) => setOrderNumber(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && handleTrackOrder()}
                         placeholder="#1234"
                         className="w-full mt-1 px-3 py-2 text-sm border border-border rounded-lg bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                       />
                     </div>
                     <div>
-                      <label className="text-xs font-medium text-muted-foreground">Email Address</label>
+                      <label className="text-xs font-medium text-muted-foreground">
+                        Email Address (optional)
+                      </label>
                       <input
                         value={orderEmail}
                         onChange={(e) => setOrderEmail(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && handleTrackOrder()}
                         placeholder="you@email.com"
                         className="w-full mt-1 px-3 py-2 text-sm border border-border rounded-lg bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                       />
                     </div>
-                    <button className="w-full py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors">
-                      Track Order
+                    <button
+                      onClick={handleTrackOrder}
+                      disabled={!orderNumber.trim() || isLoading}
+                      className="w-full py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isLoading ? "Tracking..." : "Track Order"}
                     </button>
-                  </div>
-
-                  {/* Sample result */}
-                  <div className="border border-border rounded-lg p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium text-foreground">Order #2847</p>
-                      <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-accent text-accent-foreground">In Transit</span>
-                    </div>
-                    <div className="space-y-1.5">
-                      {[
-                        { step: "Confirmed", done: true },
-                        { step: "Shipped", done: true },
-                        { step: "In Transit", done: true },
-                        { step: "Delivered", done: false },
-                      ].map((s, i) => (
-                        <div key={i} className="flex items-center gap-2">
-                          <div className={`w-2 h-2 rounded-full ${s.done ? "bg-primary" : "bg-border"}`} />
-                          <span className={`text-xs ${s.done ? "text-foreground" : "text-muted-foreground"}`}>{s.step}</span>
-                        </div>
-                      ))}
-                    </div>
-                    <p className="text-xs text-muted-foreground">Estimated delivery: Tomorrow, 5 PM</p>
-                  </div>
-                </div>
-              )}
-
-              {view === "recommendations" && (
-                <div className="space-y-4 animate-fade-in">
-                  <p className="text-sm text-foreground font-medium">Recommended for You</p>
-                  <div className="space-y-3">
-                    {sampleProducts.map((p) => (
-                      <div key={p.id} className="border border-border rounded-lg p-3 flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center text-2xl flex-shrink-0">
-                          {p.image}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-foreground">{p.name}</p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-sm font-semibold text-foreground">{p.price}</span>
-                            <span className="text-[10px] text-muted-foreground">⭐ {p.rating}</span>
-                          </div>
-                        </div>
-                        <button className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors flex-shrink-0">
-                          <ShoppingCart className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
                   </div>
                 </div>
               )}
@@ -172,18 +288,48 @@ export default function ChatWidget() {
               {view === "chat" && (
                 <div className="space-y-3 animate-fade-in">
                   {messages.map((m, i) => (
-                    <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                    <div key={i}>
                       <div
-                        className={`max-w-[85%] px-3 py-2 rounded-xl text-sm ${
-                          m.role === "user"
-                            ? "bg-primary text-primary-foreground rounded-br-sm"
-                            : "bg-muted text-foreground rounded-bl-sm"
-                        }`}
+                        className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
                       >
-                        {m.text}
+                        <div
+                          className={`max-w-[85%] px-3 py-2 rounded-xl text-sm ${
+                            m.role === "user"
+                              ? "bg-primary text-primary-foreground rounded-br-sm"
+                              : m.error
+                              ? "bg-destructive/10 text-destructive rounded-bl-sm"
+                              : "bg-muted text-foreground rounded-bl-sm"
+                          }`}
+                        >
+                          {m.text}
+                          {m.error && (
+                            <button
+                              onClick={() => {
+                                const lastUser = [...messages]
+                                  .reverse()
+                                  .find((msg) => msg.role === "user");
+                                if (lastUser) handleRetry(lastUser.text);
+                              }}
+                              className="flex items-center gap-1 mt-1 text-xs text-destructive hover:underline"
+                            >
+                              <RefreshCw className="w-3 h-3" />
+                              Retry
+                            </button>
+                          )}
+                        </div>
                       </div>
+                      {/* Product cards */}
+                      {m.products && m.products.length > 0 && (
+                        <div className="mt-2 space-y-1.5 max-w-[90%]">
+                          {m.products.map((p) => (
+                            <ProductCard key={p.id} product={p} />
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ))}
+                  {isLoading && <TypingIndicator />}
+                  <div ref={messagesEndRef} />
                 </div>
               )}
             </div>
@@ -196,13 +342,15 @@ export default function ChatWidget() {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-                    placeholder="Type a message..."
-                    className="flex-1 px-3 py-2 text-sm border border-border rounded-lg bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                     onFocus={() => view === "home" && setView("chat")}
+                    placeholder="Type a message..."
+                    disabled={isLoading}
+                    className="flex-1 px-3 py-2 text-sm border border-border rounded-lg bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                   />
                   <button
                     onClick={sendMessage}
-                    className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+                    disabled={!input.trim() || isLoading}
+                    className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Send className="w-4 h-4" />
                   </button>

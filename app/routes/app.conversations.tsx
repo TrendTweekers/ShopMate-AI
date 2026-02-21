@@ -25,7 +25,7 @@ export default function ConversationsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selectedConv = conversations.find((c) => c.id === selectedId);
 
-  const formatTime = (date: string) => {
+  const formatTime = (date: Date | string) => {
     const d = new Date(date);
     const now = new Date();
     const diffMs = now.getTime() - d.getTime();
