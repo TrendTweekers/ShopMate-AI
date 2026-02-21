@@ -1,4 +1,5 @@
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
+import { useLoaderData } from "react-router";
 import { MessageSquare, ShieldCheck, DollarSign, Clock } from "lucide-react";
 import KpiCard from "~/components/admin/KpiCard";
 import {
@@ -14,10 +15,17 @@ import {
 } from "recharts";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
-  return null;
+  const { session } = await authenticate.admin(request);
+  const totalChats = await prisma.conversation.count({ where: { shop: session.shop } });
+  const totalMessages = await prisma.message.count({
+    where: { conversation: { shop: session.shop } },
+  });
+  return { totalChats, totalMessages };
 };
 
 const chatData = [
@@ -49,6 +57,7 @@ const recentConversations = [
 ];
 
 export default function Dashboard() {
+  const { totalChats, totalMessages } = useLoaderData<typeof loader>();
   return (
     <div className="space-y-6 max-w-6xl">
       <div>
@@ -57,7 +66,7 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard title="Total Chats" value="351" change="+12.5%" trend="up" icon={MessageSquare} />
+        <KpiCard title="Total Chats" value={String(totalChats)} change="+12.5%" trend="up" icon={MessageSquare} />
         <KpiCard title="Deflection Rate" value="78%" change="+3.2%" trend="up" icon={ShieldCheck} />
         <KpiCard title="Revenue from Recs" value="$2,910" change="+18.7%" trend="up" icon={DollarSign} />
         <KpiCard title="Avg Response Time" value="1.2s" change="-0.3s" trend="up" icon={Clock} />
