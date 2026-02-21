@@ -25,6 +25,12 @@
   const BOT_NAME = cfg.botName || "ShopMate";
   const GREETING = cfg.greeting || "Hi! \uD83D\uDC4B How can I help you today?";
   const SESSION_KEY = "shopmate_conv_id";
+  // Quick-reply chips shown below the greeting until the user sends their first message.
+  // Merchants can override via ShopMateConfig.quickReplies (array of strings).
+  // Pass an empty array [] to disable chips entirely.
+  const QUICK_REPLIES = Array.isArray(cfg.quickReplies)
+    ? cfg.quickReplies
+    : ["Track my order", "Recommend a product", "What's your return policy?", "Talk to a human"];
   // Always relative so Shopify's proxy adds the HMAC signature.
   // API_BASE is "" — kept for backward compat if someone sets it.
   const API_URL = API_BASE + "/apps/shopmate/chat";
@@ -36,6 +42,8 @@
   let isLoading = false;
   let conversationId = sessionStorage.getItem(SESSION_KEY) || null;
   let messages = [{ role: "bot", text: GREETING }];
+  // Chips are shown until the user sends their first real message.
+  let chipsVisible = QUICK_REPLIES.length > 0;
 
   // ── DOM refs ────────────────────────────────────────────────────────────
   let widget, bubble, panel, msgList, inputEl, sendBtn;
@@ -127,6 +135,55 @@
     .sm-bubble.user { background: ${PRIMARY}; color: #fff; border-bottom-right-radius: 4px; }
     .sm-bubble.error { background: #fee2e2; color: #b91c1c; }
 
+    /* Quick-reply chips */
+    .sm-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 0 14px 10px;
+      flex-shrink: 0;
+    }
+    .sm-chip {
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1.5px solid ${PRIMARY};
+      background: #fff;
+      color: ${PRIMARY};
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+      line-height: 1.3;
+      transition: background .12s, color .12s;
+      white-space: nowrap;
+    }
+    .sm-chip:hover { background: ${PRIMARY}; color: #fff; }
+
+    /* Formatted bot reply paragraphs & lists */
+    .sm-bubble .sm-para {
+      margin: 0 0 6px 0;
+      line-height: 1.5;
+    }
+    .sm-bubble .sm-para:last-child { margin-bottom: 0; }
+    .sm-bubble .sm-para--heading { font-weight: 600; }
+    .sm-bubble .sm-list {
+      margin: 2px 0 6px 0;
+      padding-left: 16px;
+      list-style: none;
+    }
+    .sm-bubble .sm-list:last-child { margin-bottom: 0; }
+    .sm-bubble .sm-list li {
+      position: relative;
+      padding-left: 10px;
+      margin-bottom: 3px;
+      line-height: 1.45;
+    }
+    .sm-bubble .sm-list li::before {
+      content: "•";
+      position: absolute;
+      left: 0;
+      color: ${PRIMARY};
+    }
+
     .sm-products { display: flex; flex-direction: column; gap: 6px; max-width: 88%; margin-top: 4px; }
     .sm-product-card {
       display: flex; align-items: center; gap: 8px;
@@ -175,13 +232,78 @@
   const iconX    = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
   const iconSend = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`;
 
+  // ── Markdown → clean HTML ─────────────────────────────────────────────────
+  // Converts the LLM's raw markdown-ish output into safe, readable HTML.
+  // No external library needed — handles the patterns Claude Haiku actually
+  // produces: headings, bold, bullet lists, and literal \n line breaks.
+  function formatReply(raw) {
+    // 1. Normalise literal "\n" escape sequences (sometimes JSON-encoded twice)
+    var s = String(raw || "").replace(/\\n/g, "\n");
+
+    // 2. Split into lines for line-level processing
+    var lines = s.split("\n");
+    var out = [];
+    var inList = false;
+
+    lines.forEach(function(line) {
+      var t = line.trim();
+
+      // Skip blank lines — we handle spacing via CSS gap
+      if (!t) {
+        if (inList) { out.push("</ul>"); inList = false; }
+        return;
+      }
+
+      // Heading: # Foo  →  plain bold paragraph (conversational tone)
+      if (/^#{1,3}\s+/.test(t)) {
+        if (inList) { out.push("</ul>"); inList = false; }
+        t = t.replace(/^#{1,3}\s+/, "");
+        t = inlineFmt(t);
+        out.push("<p class=\"sm-para sm-para--heading\">" + t + "</p>");
+        return;
+      }
+
+      // Bullet: - item  or  * item  →  <li>
+      if (/^[-*]\s+/.test(t)) {
+        if (!inList) { out.push("<ul class=\"sm-list\">"); inList = true; }
+        t = t.replace(/^[-*]\s+/, "");
+        out.push("<li>" + inlineFmt(t) + "</li>");
+        return;
+      }
+
+      // Regular paragraph
+      if (inList) { out.push("</ul>"); inList = false; }
+      out.push("<p class=\"sm-para\">" + inlineFmt(t) + "</p>");
+    });
+
+    if (inList) out.push("</ul>");
+    return out.join("");
+  }
+
+  // Inline formatting: **bold** → <strong>, strip leftover * / _
+  function inlineFmt(s) {
+    // Escape HTML first so we don't XSS on the inline replacements
+    s = escHtml(s);
+    // **bold** or __bold__
+    s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    s = s.replace(/__(.+?)__/g, "<strong>$1</strong>");
+    // *italic* or _italic_  — strip the markers, keep text
+    s = s.replace(/\*(.+?)\*/g, "$1");
+    s = s.replace(/_(.+?)_/g, "$1");
+    return s;
+  }
+
   // ── Render helpers ────────────────────────────────────────────────────────
   function msgHtml(msg) {
     if (msg.loading) {
       return `<div class="sm-msg-row bot"><div class="sm-typing"><div class="sm-dot"></div><div class="sm-dot"></div><div class="sm-dot"></div></div></div>`;
     }
     const cls = msg.role === "user" ? "user" : (msg.error ? "error" : "bot");
-    let html = `<div class="sm-msg-row ${msg.role === "user" ? "user" : ""}"><div class="sm-bubble ${cls}">${escHtml(msg.text)}</div></div>`;
+    // Bot messages: render formatted HTML. User/error messages: plain escaped text.
+    var bodyHtml = (msg.role === "bot" && !msg.error)
+      ? formatReply(msg.text)
+      : "<p class=\"sm-para\">" + escHtml(msg.text) + "</p>";
+    let html = `<div class="sm-msg-row ${msg.role === "user" ? "user" : ""}"><div class="sm-bubble ${cls}">${bodyHtml}</div></div>`;
     if (msg.products && msg.products.length) {
       html += `<div class="sm-msg-row"><div class="sm-products">`;
       msg.products.forEach(function(p) {
@@ -206,6 +328,33 @@
     }
     msgList.innerHTML = html;
     msgList.scrollTop = msgList.scrollHeight;
+    renderChips();
+  }
+
+  // ── Quick-reply chips ─────────────────────────────────────────────────────
+  function renderChips() {
+    // Remove any existing chip row so we re-render cleanly.
+    var old = panel.querySelector(".sm-chips");
+    if (old) old.remove();
+
+    if (!chipsVisible || isLoading) return;
+
+    var row = document.createElement("div");
+    row.className = "sm-chips";
+
+    QUICK_REPLIES.forEach(function(label) {
+      var btn = document.createElement("button");
+      btn.className = "sm-chip";
+      btn.textContent = label;
+      btn.addEventListener("click", function() {
+        inputEl.value = label;
+        sendMessage();
+      });
+      row.appendChild(btn);
+    });
+
+    // Insert chips between the message list and the input row.
+    panel.insertBefore(row, panel.querySelector(".sm-input-row"));
   }
 
   // ── API call ──────────────────────────────────────────────────────────────
@@ -225,6 +374,7 @@
     messages.push({ role: "user", text: text });
     inputEl.value = "";
     isLoading = true;
+    chipsVisible = false;  // hide chips permanently once user starts typing
     sendBtn.disabled = true;
     renderMessages();
 

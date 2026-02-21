@@ -25,7 +25,14 @@
       // Shopify's App Proxy then forwards — with HMAC query params attached —
       // to the Railway backend. Calling Railway directly bypasses the proxy
       // and causes 401 Unauthorized because there is no HMAC to validate.
-      apiBase: ""
+      apiBase: "",
+      // Quick-reply chips — split the comma-separated merchant setting into an array.
+      // Empty string → disable chips (pass []).
+      quickReplies: (function() {
+        var raw = {{ block.settings.quick_replies | json }};
+        if (!raw || !raw.trim()) return [];
+        return raw.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+      })()
     };
   </script>
   {{ 'chat-widget.js' | asset_url | script_tag }}
@@ -69,6 +76,13 @@
         { "value": "bottom-left",  "label": "Bottom left"  }
       ],
       "default": "bottom-right"
+    },
+    {
+      "type": "text",
+      "id": "quick_replies",
+      "label": "Quick-reply chips (comma-separated)",
+      "info": "Shown below the greeting until the shopper types. Leave blank to disable.",
+      "default": "Track my order,Recommend a product,What's your return policy?,Talk to a human"
     }
   ]
 }
