@@ -14,7 +14,7 @@ export default function AppLayout() {
   const { apiKey } = useLoaderData<typeof loader>();
 
   return (
-    <AppProvider isEmbeddedApp apiKey={apiKey}>
+    <AppProvider embedded apiKey={apiKey}>
       <NavMenu>
         <a href="/app">Dashboard</a>
         <a href="/app/setup">Setup Wizard</a>
