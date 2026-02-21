@@ -19,6 +19,10 @@ import prisma from "~/db.server";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// ─── Freemium constants ────────────────────────────────────────────────────────
+
+const FREE_LIMIT = 50; // messages per month on free plan
+
 // ─── Intent helpers ───────────────────────────────────────────────────────────
 
 function extractOrderNumber(text: string): string | null {
@@ -51,6 +55,14 @@ function extractProductQuery(text: string): string {
     .replace(/\?|please|can you|could you|i.*want|i.*need/g, "")
     .trim();
   return stripped || "popular products";
+}
+
+// ─── Review trigger ───────────────────────────────────────────────────────────
+
+const REVIEW_KEYWORDS = /\b(thanks|thank you|helpful|great|awesome|perfect|love it|order arrived|received)\b/i;
+
+function shouldTriggerReview(text: string, messageCountInConv: number): boolean {
+  return messageCountInConv >= 3 || REVIEW_KEYWORDS.test(text);
 }
 
 // ─── GraphQL queries ──────────────────────────────────────────────────────────
@@ -212,30 +224,20 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   // ── Diagnostic logging ────────────────────────────────────────────────────
   const url = new URL(request.url);
-
-  // Snapshot every query param — HMAC params from Shopify must appear here.
-  // If params is {} the request bypassed the proxy (direct call to Railway).
   const params = Object.fromEntries(url.searchParams.entries());
-  const hasHmacParams =
-    "hmac" in params || "signature" in params;
+  const hasHmacParams = "hmac" in params || "signature" in params;
 
   console.log("[appProxy] ── Incoming ──────────────────────────────────────");
   console.log("[appProxy] method         :", request.method);
   console.log("[appProxy] pathname       :", url.pathname);
   console.log("[appProxy] search         :", url.search || "(empty — no HMAC params!)");
   console.log("[appProxy] hasHmacParams  :", hasHmacParams);
-  console.log("[appProxy] params         :", JSON.stringify(params));
-  // Shopify also sends these headers on proxied requests
   console.log("[appProxy] x-shopify-shop :", request.headers.get("x-shopify-shop-domain") ?? "(missing)");
-  console.log("[appProxy] x-shopify-hmac :", request.headers.get("x-shopify-hmac-sha256") ?? "(missing)");
-  console.log("[appProxy] content-type   :", request.headers.get("content-type") ?? "(missing)");
-  // Confirm secret is loaded — length tells us if it's the full 32-char key
   console.log("[appProxy] SHOPIFY_API_SECRET present:", !!process.env.SHOPIFY_API_SECRET);
-  console.log("[appProxy] SHOPIFY_API_SECRET length :", process.env.SHOPIFY_API_SECRET?.length ?? 0, "(expect ~32)");
-  console.log("[appProxy] SHOPIFY_API_KEY length     :", process.env.SHOPIFY_API_KEY?.length ?? 0);
+  console.log("[appProxy] SHOPIFY_API_SECRET length :", process.env.SHOPIFY_API_SECRET?.length ?? 0);
   console.log("[appProxy] ────────────────────────────────────────────────────");
 
-  // Authenticate via app proxy HMAC (throws on invalid signature)
+  // ── Auth ──────────────────────────────────────────────────────────────────
   let shop: string;
   let adminCtx: AdminApiContext | undefined;
 
@@ -245,20 +247,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     adminCtx = ctx.admin ?? undefined;
     console.log("[appProxy] ✓ Auth success — shop:", shop, "| hasAdmin:", !!adminCtx);
   } catch (err) {
-    // Capture message AND cause — shopify-app-react-router wraps the raw error
     const errMsg   = err instanceof Error ? err.message   : String(err);
     const errCause = err instanceof Error && err.cause
       ? (err.cause instanceof Error ? err.cause.message : String(err.cause))
       : "(no cause)";
-    const errStack = err instanceof Error ? (err.stack ?? "").split("\n").slice(0,4).join(" | ") : "";
-
-    console.error("[appProxy] ✗ Auth FAILED");
-    console.error("[appProxy]   message :", errMsg);
-    console.error("[appProxy]   cause   :", errCause);
-    console.error("[appProxy]   stack   :", errStack);
-    console.error("[appProxy]   params  :", JSON.stringify(params));
-    console.error("[appProxy]   secretOk:", !!process.env.SHOPIFY_API_SECRET, "len:", process.env.SHOPIFY_API_SECRET?.length ?? 0);
-
+    console.error("[appProxy] ✗ Auth FAILED", errMsg, errCause);
     return Response.json(
       { error: "Unauthorized", debug: errMsg, cause: errCause },
       { status: 401, headers: CORS },
@@ -269,6 +262,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return Response.json({ error: "Could not determine shop" }, { status: 400, headers: CORS });
   }
 
+  // ── Parse body ────────────────────────────────────────────────────────────
   let body: { message?: string; conversationId?: string };
   try {
     body = await request.json();
@@ -281,7 +275,53 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return Response.json({ error: "message is required" }, { status: 400, headers: CORS });
   }
 
-  // ── Find or create conversation ──
+  // ── Load / upsert ShopSettings ────────────────────────────────────────────
+  const now = new Date();
+  let settings = await prisma.shopSettings.upsert({
+    where: { shop },
+    create: { shop },
+    update: {},
+  });
+
+  // Monthly reset: if lastReset is in a different year/month, reset counter
+  const resetDate = new Date(settings.lastReset);
+  if (
+    now.getUTCFullYear() !== resetDate.getUTCFullYear() ||
+    now.getUTCMonth() !== resetDate.getUTCMonth()
+  ) {
+    settings = await prisma.shopSettings.update({
+      where: { shop },
+      data: { messageCount: 0, lastReset: now },
+    });
+    console.log("[appProxy] Monthly reset applied for shop:", shop);
+  }
+
+  // ── Freemium gate ─────────────────────────────────────────────────────────
+  const isPro = settings.plan === "pro";
+  console.log("[appProxy] plan:", settings.plan, "| messageCount:", settings.messageCount, "| isPro:", isPro);
+
+  if (!isPro && settings.messageCount >= FREE_LIMIT) {
+    console.log("[appProxy] Limit reached for shop:", shop);
+    return Response.json(
+      {
+        error: "limit_reached",
+        remaining: 0,
+        limit: FREE_LIMIT,
+        upgradeUrl: `https://${shop}/admin/apps/shopmate-ai`,
+      },
+      { status: 402, headers: CORS },
+    );
+  }
+
+  // ── Increment message count (1 per user turn) ─────────────────────────────
+  if (!isPro) {
+    await prisma.shopSettings.update({
+      where: { shop },
+      data: { messageCount: { increment: 1 } },
+    });
+  }
+
+  // ── Find or create conversation ───────────────────────────────────────────
   const existingConv = conversationId
     ? await prisma.conversation.findUnique({
         where: { id: conversationId },
@@ -300,7 +340,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     data: { conversationId: conv.id, role: "user", content: message },
   });
 
-  // ── Intent detection + Shopify data ──
+  // ── Intent detection + Shopify data ───────────────────────────────────────
   let extraContext = "";
   let products: ProductResult[] = [];
 
@@ -317,13 +357,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
   }
 
-  // ── History ──
+  // ── Build message history ─────────────────────────────────────────────────
   const history = conv.messages.map((m) => ({
     role: m.role as "user" | "assistant",
     content: m.content,
   }));
 
-  // ── System prompt ──
+  // ── System prompt ─────────────────────────────────────────────────────────
   const systemPrompt = [
     `You are ShopMate, a helpful AI assistant for the Shopify store ${shop}. Help customers with order tracking, product recommendations, returns, and general questions. Be friendly, concise, and helpful.`,
     extraContext ? `\nCONTEXT:\n${extraContext}` : "",
@@ -332,7 +372,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     .filter(Boolean)
     .join("\n");
 
-  // ── Call Anthropic ──
+  // ── Call Anthropic ────────────────────────────────────────────────────────
   const aiRes = await anthropic.messages.create({
     model: "claude-haiku-4-5",
     max_tokens: 1024,
@@ -347,8 +387,33 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     data: { conversationId: conv.id, role: "assistant", content: reply },
   });
 
+  // ── Review prompt check ───────────────────────────────────────────────────
+  // conv.messages already loaded; +1 for the message we just saved
+  const convMessageCount = conv.messages.length + 1;
+  let showReview = false;
+
+  if (!settings.reviewPrompted && shouldTriggerReview(message, convMessageCount)) {
+    showReview = true;
+    // Mark as prompted so we only show it once per shop
+    await prisma.shopSettings.update({
+      where: { shop },
+      data: { reviewPrompted: true },
+    });
+    console.log("[appProxy] Review prompt triggered for shop:", shop);
+  }
+
+  // ── Response ──────────────────────────────────────────────────────────────
+  const remaining = isPro ? null : Math.max(0, FREE_LIMIT - (settings.messageCount + 1));
+
   return Response.json(
-    { reply, conversationId: conv.id, products: products.length > 0 ? products : undefined },
+    {
+      reply,
+      conversationId: conv.id,
+      products: products.length > 0 ? products : undefined,
+      // Billing / usage metadata consumed by the widget
+      remaining,         // null = pro (unlimited), number = messages left
+      showReview,        // true = show app store review popup once
+    },
     { headers: CORS },
   );
 };

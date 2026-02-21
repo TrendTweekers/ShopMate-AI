@@ -158,6 +158,36 @@
     }
     .sm-chip:hover { background: ${PRIMARY}; color: #fff; }
 
+    /* Review popup */
+    .sm-review-popup {
+      position: absolute;
+      bottom: 100%;
+      ${POSITION === "bottom-left" ? "left: 0;" : "right: 0;"}
+      margin-bottom: 10px;
+      width: 260px;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 14px;
+      box-shadow: 0 4px 20px rgba(0,0,0,.14);
+      padding: 14px 16px;
+      font-size: 13px;
+      z-index: 2147483647;
+      animation: sm-popup-in .2s ease;
+    }
+    @keyframes sm-popup-in { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform: translateY(0); } }
+    .sm-review-popup p { margin: 0 0 10px; line-height: 1.4; color: #111827; }
+    .sm-review-actions { display: flex; gap: 8px; }
+    .sm-review-yes {
+      flex: 1; padding: 6px; border-radius: 8px; border: none;
+      background: ${PRIMARY}; color: #fff; font-size: 12px; font-weight: 600;
+      cursor: pointer;
+    }
+    .sm-review-dismiss {
+      padding: 6px 10px; border-radius: 8px;
+      border: 1px solid #d1d5db; background: #fff; color: #6b7280;
+      font-size: 12px; cursor: pointer;
+    }
+
     /* Formatted bot reply paragraphs & lists */
     .sm-bubble .sm-para {
       margin: 0 0 6px 0;
@@ -298,6 +328,18 @@
     if (msg.loading) {
       return `<div class="sm-msg-row bot"><div class="sm-typing"><div class="sm-dot"></div><div class="sm-dot"></div><div class="sm-dot"></div></div></div>`;
     }
+
+    // ── Upgrade limit bubble ──────────────────────────────────────────────
+    if (msg.text === "upgrade_limit") {
+      var uUrl = escHtml(msg.upgradeUrl || "#");
+      return `<div class="sm-msg-row"><div class="sm-bubble error"><p class="sm-para">You\u2019ve reached the free limit (50 msg/mo).</p><p class="sm-para" style="margin-bottom:8px">Upgrade for unlimited conversations.</p><a href="${uUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:6px 14px;border-radius:8px;background:#008060;color:#fff;font-size:12px;font-weight:600;text-decoration:none">Upgrade \u2192</a></div></div>`;
+    }
+
+    // ── Usage hint (soft warning at ≤10 messages left) ────────────────────
+    if (msg.isHint) {
+      return `<div class="sm-msg-row"><div class="sm-bubble bot" style="font-size:11px;color:#6b7280;padding:5px 10px;">${escHtml(msg.text)}</div></div>`;
+    }
+
     const cls = msg.role === "user" ? "user" : (msg.error ? "error" : "bot");
     // Bot messages: render formatted HTML. User/error messages: plain escaped text.
     var bodyHtml = (msg.role === "bot" && !msg.error)
@@ -387,23 +429,47 @@
     })
       .then(function(res) {
         console.log("[ShopMate] Response status:", res.status);
-        if (!res.ok) {
-          return res.json().then(function(body) {
+        return res.json().then(function(body) {
+          // ── Freemium limit reached (402) ──────────────────────────────────
+          if (res.status === 402 && body.error === "limit_reached") {
+            console.warn("[ShopMate] Free limit reached");
+            var upgradeUrl = body.upgradeUrl || "https://" + SHOP + "/admin/apps/shopmate-ai";
+            messages.push({
+              role: "bot",
+              text: "upgrade_limit",   // sentinel — rendered specially in msgHtml
+              upgradeUrl: upgradeUrl,
+              error: true,
+            });
+            return null;
+          }
+          if (!res.ok) {
             console.error("[ShopMate] Error body:", JSON.stringify(body));
-            throw new Error("HTTP " + res.status + (body.debug ? " — " + body.debug : ""));
-          }).catch(function() {
-            throw new Error("HTTP " + res.status);
-          });
-        }
-        return res.json();
+            throw new Error("HTTP " + res.status + (body.debug ? " \u2014 " + body.debug : ""));
+          }
+          return body;
+        });
       })
       .then(function(data) {
+        if (!data) return; // limit_reached already handled
         console.log("[ShopMate] Reply received:", data.reply && data.reply.slice(0, 60));
         if (data.conversationId) {
           conversationId = data.conversationId;
           sessionStorage.setItem(SESSION_KEY, conversationId);
         }
         messages.push({ role: "bot", text: data.reply, products: data.products });
+        // ── Review popup ───────────────────────────────────────────────────
+        if (data.showReview) {
+          setTimeout(showReviewPopup, 800);
+        }
+        // ── Remaining usage hint ───────────────────────────────────────────
+        if (typeof data.remaining === "number" && data.remaining <= 10 && data.remaining > 0) {
+          messages.push({
+            role: "bot",
+            text: data.remaining + " free message" + (data.remaining === 1 ? "" : "s") + " left this month.",
+            error: false,
+            isHint: true,
+          });
+        }
       })
       .catch(function(err) {
         console.error("[ShopMate] Fetch error:", err.message);
@@ -415,6 +481,49 @@
         renderMessages();
         inputEl.focus();
       });
+  }
+
+  // ── Review popup ──────────────────────────────────────────────────────────
+  // Shows once per shop session — the backend sets reviewPrompted=true so it
+  // won't trigger again after the next page load.
+  function showReviewPopup() {
+    // Don't show if already displayed this session
+    if (document.getElementById("sm-review-popup")) return;
+
+    var popup = document.createElement("div");
+    popup.className = "sm-review-popup";
+    popup.id = "sm-review-popup";
+
+    var p = document.createElement("p");
+    p.textContent = "Enjoying ShopMate? A quick review helps other merchants find us! \u2B50";
+    popup.appendChild(p);
+
+    var actions = document.createElement("div");
+    actions.className = "sm-review-actions";
+
+    var yesBtn = document.createElement("a");
+    yesBtn.className = "sm-review-yes";
+    yesBtn.textContent = "Leave a review";
+    yesBtn.href = "https://apps.shopify.com/shopmate-ai/reviews/new";
+    yesBtn.target = "_blank";
+    yesBtn.rel = "noopener noreferrer";
+    yesBtn.style.textAlign = "center";
+    yesBtn.style.textDecoration = "none";
+    yesBtn.style.display = "block";
+    yesBtn.addEventListener("click", function() { popup.remove(); });
+
+    var dismissBtn = document.createElement("button");
+    dismissBtn.className = "sm-review-dismiss";
+    dismissBtn.textContent = "Maybe later";
+    dismissBtn.addEventListener("click", function() { popup.remove(); });
+
+    actions.appendChild(yesBtn);
+    actions.appendChild(dismissBtn);
+    popup.appendChild(actions);
+
+    // Anchor to the widget container so it floats above the bubble
+    widget.style.position = "relative";
+    widget.appendChild(popup);
   }
 
   // ── Toggle ────────────────────────────────────────────────────────────────
