@@ -1,5 +1,5 @@
-import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useLoaderData } from "react-router";
+import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
+import { useFetcher, useLoaderData } from "react-router";
 import { MessageSquare, ShieldCheck, Clock, TrendingUp, Zap } from "lucide-react";
 import KpiCard from "~/components/admin/KpiCard";
 import {
@@ -18,12 +18,12 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "~/db.server";
 
 const FREE_LIMIT = 50;
+const REVIEW_URL = "https://apps.shopify.com/shopmate-ai/reviews/new";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
-/** Returns an array of the last 7 day boundaries (start of each UTC day), oldest first */
 function last7DayBoundaries(): Date[] {
   const days: Date[] = [];
   for (let i = 6; i >= 0; i--) {
@@ -35,6 +35,69 @@ function last7DayBoundaries(): Date[] {
   return days;
 }
 
+// ─── Review trigger logic (merchant-only, runs in loader) ─────────────────────
+
+function getReviewTrigger(
+  settings: {
+    hasReviewed: boolean;
+    reviewDismissedCount: number;
+    reviewRequestedAt: Date | null;
+    aiHandledChats: number;
+    orderTrackingResolved: number;
+    createdAt: Date;
+  },
+  totalShopChats: number,
+): string | false {
+  // Don't-ask rules
+  if (settings.hasReviewed) return false;
+  if (settings.reviewDismissedCount >= 2) return false;
+
+  // 30-day cooldown since last prompt
+  if (settings.reviewRequestedAt) {
+    const daysSince = (Date.now() - settings.reviewRequestedAt.getTime()) / 86_400_000;
+    if (daysSince < 30) return false;
+  }
+
+  // Trigger 1: 3+ AI-handled chats
+  if (settings.aiHandledChats >= 3) return "ai_handled";
+
+  // Trigger 2: at least 1 order tracking query resolved
+  if (settings.orderTrackingResolved >= 1) return "order_tracking";
+
+  // Trigger 3: 7 days of install + 5 total chats
+  const daysSinceInstall = (Date.now() - settings.createdAt.getTime()) / 86_400_000;
+  if (daysSinceInstall >= 7 && totalShopChats >= 5) return "usage_milestone";
+
+  return false;
+}
+
+// ─── Action (handles review banner button clicks) ─────────────────────────────
+
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { session } = await authenticate.admin(request);
+  const shop = session.shop;
+
+  const formData = await request.formData();
+  const intent = formData.get("intent") as string;
+
+  if (intent === "review_dismissed") {
+    await prisma.shopSettings.update({
+      where: { shop },
+      data: {
+        reviewDismissedCount: { increment: 1 },
+        reviewRequestedAt: new Date(), // reset 30-day cooldown on dismiss too
+      },
+    });
+  } else if (intent === "review_completed") {
+    await prisma.shopSettings.update({
+      where: { shop },
+      data: { hasReviewed: true },
+    });
+  }
+
+  return null;
+};
+
 // ─── Loader ───────────────────────────────────────────────────────────────────
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -42,7 +105,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const shop = session.shop;
 
   // ── Billing check ──
-  // hasActivePayment returns true if the shop has any active recurring charge.
   const { hasActivePayment } = await billing.check({
     plans: ["ShopMate Pro"],
     isTest: process.env.NODE_ENV !== "production",
@@ -72,7 +134,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     select: { createdAt: true },
   });
 
-  // Bucket by day-of-week label
   const boundaries = last7DayBoundaries();
   const chatData = boundaries.map((dayStart) => {
     const dayEnd = new Date(dayStart.getTime() + 86_400_000);
@@ -82,12 +143,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     return { day: DAY_LABELS[dayStart.getUTCDay()], chats: count };
   });
 
-  // ── Per-day message counts (proxy for engagement / activity) ──
+  // ── Per-day message counts ──
   const recentMessages = await prisma.message.findMany({
-    where: {
-      conversation: { shop },
-      createdAt: { gte: sevenDaysAgo },
-    },
+    where: { conversation: { shop }, createdAt: { gte: sevenDaysAgo } },
     select: { createdAt: true },
   });
 
@@ -110,17 +168,39 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     },
   });
 
-  // ── Deflection rate: conversations with ≥1 message but never marked
-  //    escalated (we approximate as "all AI-handled" for now) ──
+  // ── Deflection rate ──
   const handledCount = await prisma.conversation.count({
     where: { shop, messages: { some: { role: "assistant" } } },
   });
   const deflectionRate =
     totalChats > 0 ? Math.round((handledCount / totalChats) * 100) : 0;
 
-  // ── Avg messages per conversation (proxy for engagement) ──
+  // ── Avg messages per conversation ──
   const avgMessages =
     totalChats > 0 ? (totalMessages / totalChats).toFixed(1) : "0";
+
+  // ── Review banner trigger check ──
+  // Evaluated here so the merchant sees the banner on their next dashboard load
+  // after enough chat activity has accumulated.
+  const reviewTrigger = getReviewTrigger(
+    {
+      hasReviewed: settings.hasReviewed ?? false,
+      reviewDismissedCount: settings.reviewDismissedCount ?? 0,
+      reviewRequestedAt: settings.reviewRequestedAt ?? null,
+      aiHandledChats: settings.aiHandledChats ?? 0,
+      orderTrackingResolved: settings.orderTrackingResolved ?? 0,
+      createdAt: settings.createdAt,
+    },
+    totalChats,
+  );
+
+  // If a trigger fires, stamp reviewRequestedAt so the 30-day cooldown starts now
+  if (reviewTrigger) {
+    await prisma.shopSettings.update({
+      where: { shop },
+      data: { reviewPrompted: true, reviewRequestedAt: new Date() },
+    });
+  }
 
   return {
     totalChats,
@@ -140,8 +220,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     plan: settings.plan as "free" | "pro",
     messageCount: settings.messageCount,
     freeLimit: FREE_LIMIT,
-    // Billing redirect URL — merchant clicks this to subscribe
     billingUrl: `/app/billing`,
+    // Review banner — only truthy when a trigger fires
+    reviewTrigger: reviewTrigger as string | false,
+    aiHandledChats: settings.aiHandledChats ?? 0,
   };
 };
 
@@ -155,6 +237,102 @@ function timeAgo(isoDate: string): string {
   const diffHr = Math.floor(diffMin / 60);
   if (diffHr < 24) return `${diffHr}h ago`;
   return `${Math.floor(diffHr / 24)}d ago`;
+}
+
+// ─── Review Banner component ───────────────────────────────────────────────────
+
+function ReviewBanner({
+  trigger,
+  aiHandledChats,
+}: {
+  trigger: string;
+  aiHandledChats: number;
+}) {
+  const fetcher = useFetcher();
+
+  // Optimistically hide once merchant clicks either button
+  if (fetcher.state !== "idle") return null;
+
+  const headlineMap: Record<string, string> = {
+    ai_handled: `🎉 Great job! ShopMate has handled ${aiHandledChats} customer chat${aiHandledChats !== 1 ? "s" : ""}!`,
+    order_tracking: "📦 ShopMate just helped a customer track their order!",
+    usage_milestone: "🚀 ShopMate has been running for a week — things are moving!",
+  };
+
+  const headline = headlineMap[trigger] ?? "🎉 ShopMate is working hard for your store!";
+
+  function handleReview() {
+    // Open review page in new tab
+    window.open(REVIEW_URL, "_blank", "noopener,noreferrer");
+    // Mark as reviewed in DB so the banner never shows again
+    const fd = new FormData();
+    fd.append("intent", "review_completed");
+    fetcher.submit(fd, { method: "post" });
+  }
+
+  function handleDismiss() {
+    const fd = new FormData();
+    fd.append("intent", "review_dismissed");
+    fetcher.submit(fd, { method: "post" });
+  }
+
+  return (
+    <div
+      style={{
+        background: "hsl(160 100% 96%)",
+        border: "1px solid #008060",
+        borderRadius: 10,
+        padding: "14px 18px",
+        display: "flex",
+        alignItems: "center",
+        gap: 16,
+        flexWrap: "wrap" as const,
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 200 }}>
+        <p style={{ margin: 0, fontWeight: 600, fontSize: 14, color: "#004c3f" }}>
+          {headline}
+        </p>
+        <p style={{ margin: "4px 0 0", fontSize: 13, color: "#006450" }}>
+          Loving ShopMate? Help other merchants discover it by leaving a quick review — it only takes 30 seconds ⭐
+        </p>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+        <button
+          onClick={handleReview}
+          style={{
+            padding: "7px 16px",
+            borderRadius: 8,
+            background: "#008060",
+            color: "#fff",
+            fontSize: 13,
+            fontWeight: 600,
+            border: "none",
+            cursor: "pointer",
+            whiteSpace: "nowrap" as const,
+          }}
+        >
+          ⭐ Leave a Review
+        </button>
+        <button
+          onClick={handleDismiss}
+          style={{
+            padding: "7px 12px",
+            borderRadius: 8,
+            background: "transparent",
+            color: "#006450",
+            fontSize: 13,
+            border: "1px solid #008060",
+            cursor: "pointer",
+            whiteSpace: "nowrap" as const,
+          }}
+        >
+          Maybe later
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -171,6 +349,8 @@ export default function Dashboard() {
     messageCount,
     freeLimit,
     billingUrl,
+    reviewTrigger,
+    aiHandledChats,
   } = useLoaderData<typeof loader>();
 
   const isPro = plan === "pro";
@@ -179,6 +359,12 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6 max-w-6xl">
+
+      {/* ── Review banner — only visible when a trigger fires ── */}
+      {reviewTrigger && (
+        <ReviewBanner trigger={reviewTrigger} aiHandledChats={aiHandledChats} />
+      )}
+
       {/* Plan banner */}
       <div
         style={{

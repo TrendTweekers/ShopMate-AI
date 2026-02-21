@@ -57,52 +57,12 @@ function extractProductQuery(text: string): string {
   return stripped || "popular products";
 }
 
-// ─── Review system ────────────────────────────────────────────────────────────
+// ─── Escalation detection (used only for counter logic) ───────────────────────
 
 const ESCALATION_PATTERN = /\b(escalate|human agent|speak to (a |someone|an) (human|person|agent|representative)|talk to (a |someone|an) (human|person|agent|representative)|live (chat|support|agent)|real person|customer service rep)\b/i;
 
-/** Returns true if the AI reply suggests escalation (bot couldn't handle it) */
 function replyIsEscalation(reply: string): boolean {
   return ESCALATION_PATTERN.test(reply);
-}
-
-/** Decide whether to show a review popup, based on smart trigger rules.
- *  Returns false if no trigger fires, or a "trigger reason" string if one fires. */
-function getReviewTrigger(
-  settings: {
-    hasReviewed: boolean;
-    reviewDismissedCount: number;
-    reviewRequestedAt: Date | null;
-    aiHandledChats: number;
-    orderTrackingResolved: number;
-    createdAt: Date;
-    messageCount: number;
-  },
-  totalShopChats: number,
-  isEscalation: boolean,
-): string | false {
-  // ── Don't-ask rules (always block first) ──────────────────────────────────
-  if (settings.hasReviewed) return false;
-  if (settings.reviewDismissedCount >= 2) return false;
-  if (isEscalation) return false;
-
-  // 30-day cooldown since last request
-  if (settings.reviewRequestedAt) {
-    const daysSince = (Date.now() - settings.reviewRequestedAt.getTime()) / 86_400_000;
-    if (daysSince < 30) return false;
-  }
-
-  // ── Trigger 1: 3 successful AI-handled chats ──────────────────────────────
-  if (settings.aiHandledChats >= 3) return "ai_handled";
-
-  // ── Trigger 2: order tracking query resolved ──────────────────────────────
-  if (settings.orderTrackingResolved >= 1) return "order_tracking";
-
-  // ── Trigger 3: 7 days of usage + 5 total chats ───────────────────────────
-  const daysSinceInstall = (Date.now() - settings.createdAt.getTime()) / 86_400_000;
-  if (daysSinceInstall >= 7 && totalShopChats >= 5) return "usage_milestone";
-
-  return false;
 }
 
 // ─── GraphQL queries ──────────────────────────────────────────────────────────
@@ -303,23 +263,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   // ── Parse body ────────────────────────────────────────────────────────────
-  let body: { message?: string; conversationId?: string; reviewAction?: string };
+  let body: { message?: string; conversationId?: string };
   try {
     body = await request.json();
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400, headers: CORS });
-  }
-
-  // ── Review feedback sub-action ────────────────────────────────────────────
-  // Widget POSTs { reviewAction: "dismissed" | "reviewed" } to this same endpoint.
-  if (body.reviewAction === "dismissed" || body.reviewAction === "reviewed") {
-    const updateData =
-      body.reviewAction === "reviewed"
-        ? { hasReviewed: true }
-        : { reviewDismissedCount: { increment: 1 } };
-    await prisma.shopSettings.update({ where: { shop }, data: updateData });
-    console.log(`[appProxy] Review feedback: ${body.reviewAction} for shop:`, shop);
-    return Response.json({ ok: true }, { headers: CORS });
   }
 
   const { message, conversationId } = body;
@@ -439,11 +387,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     data: { conversationId: conv.id, role: "assistant", content: reply },
   });
 
-  // ── Smart review system ───────────────────────────────────────────────────
+  // ── Update review counters (merchant dashboard reads these for trigger logic) ─
+  // These counters feed the review banner in the admin dashboard — never the widget.
   const isEscalation = replyIsEscalation(reply);
   const wasOrderTracking = isOrderTrackingIntent(message) && extraContext.startsWith("ORDER FOUND");
 
-  // Update per-chat counters (fire-and-forget style, don't block response)
   const counterUpdate: Record<string, unknown> = {};
   if (!isEscalation) {
     counterUpdate.aiHandledChats = { increment: 1 };
@@ -455,42 +403,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     await prisma.shopSettings.update({ where: { shop }, data: counterUpdate });
   }
 
-  // Re-read settings after counter update so trigger sees latest values
-  const freshSettings = await prisma.shopSettings.findUnique({ where: { shop } });
-
-  const totalShopChats = await prisma.conversation.count({ where: { shop } });
-
-  let showReview = false;
-  let reviewTrigger: string | false = false;
-
-  if (freshSettings) {
-    reviewTrigger = getReviewTrigger(
-      {
-        hasReviewed: freshSettings.hasReviewed,
-        reviewDismissedCount: freshSettings.reviewDismissedCount,
-        reviewRequestedAt: freshSettings.reviewRequestedAt,
-        aiHandledChats: freshSettings.aiHandledChats,
-        orderTrackingResolved: freshSettings.orderTrackingResolved,
-        createdAt: freshSettings.createdAt,
-        messageCount: freshSettings.messageCount,
-      },
-      totalShopChats,
-      isEscalation,
-    );
-
-    if (reviewTrigger) {
-      showReview = true;
-      await prisma.shopSettings.update({
-        where: { shop },
-        data: {
-          reviewPrompted: true,          // legacy compat
-          reviewRequestedAt: new Date(),
-        },
-      });
-      console.log(`[appProxy] Review popup triggered (${reviewTrigger}) for shop:`, shop);
-    }
-  }
-
   // ── Response ──────────────────────────────────────────────────────────────
   const remaining = isPro ? null : Math.max(0, FREE_LIMIT - (settings.messageCount + 1));
 
@@ -499,20 +411,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       reply,
       conversationId: conv.id,
       products: products.length > 0 ? products : undefined,
-      // Billing / usage metadata consumed by the widget
-      remaining,            // null = pro (unlimited), number = messages left
-      showReview,           // true = show review popup
-      reviewTrigger,        // "ai_handled" | "order_tracking" | "usage_milestone" | false
-      // Pass deflection count for the Celebration Modal copy
-      aiHandledChats: freshSettings?.aiHandledChats ?? 0,
+      remaining, // null = pro (unlimited), number = messages left this month
     },
     { headers: CORS },
   );
 };
-
-// ─── Review feedback endpoint (called by widget on dismiss / reviewed) ────────
-// POST /apps/shopmate/chat?action=review_feedback
-// Body: { shop, action: "dismissed" | "reviewed" }
-// This is handled as a secondary path inside the same action function above.
-// We check for ?action=review_feedback at the top of the action to branch.
-// (Currently inlined — see action() above; this comment is a TODO marker.)
