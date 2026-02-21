@@ -127,6 +127,32 @@
     .sm-bubble.user { background: ${PRIMARY}; color: #fff; border-bottom-right-radius: 4px; }
     .sm-bubble.error { background: #fee2e2; color: #b91c1c; }
 
+    /* Formatted bot reply paragraphs & lists */
+    .sm-bubble .sm-para {
+      margin: 0 0 6px 0;
+      line-height: 1.5;
+    }
+    .sm-bubble .sm-para:last-child { margin-bottom: 0; }
+    .sm-bubble .sm-para--heading { font-weight: 600; }
+    .sm-bubble .sm-list {
+      margin: 2px 0 6px 0;
+      padding-left: 16px;
+      list-style: none;
+    }
+    .sm-bubble .sm-list:last-child { margin-bottom: 0; }
+    .sm-bubble .sm-list li {
+      position: relative;
+      padding-left: 10px;
+      margin-bottom: 3px;
+      line-height: 1.45;
+    }
+    .sm-bubble .sm-list li::before {
+      content: "•";
+      position: absolute;
+      left: 0;
+      color: ${PRIMARY};
+    }
+
     .sm-products { display: flex; flex-direction: column; gap: 6px; max-width: 88%; margin-top: 4px; }
     .sm-product-card {
       display: flex; align-items: center; gap: 8px;
@@ -175,13 +201,78 @@
   const iconX    = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
   const iconSend = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`;
 
+  // ── Markdown → clean HTML ─────────────────────────────────────────────────
+  // Converts the LLM's raw markdown-ish output into safe, readable HTML.
+  // No external library needed — handles the patterns Claude Haiku actually
+  // produces: headings, bold, bullet lists, and literal \n line breaks.
+  function formatReply(raw) {
+    // 1. Normalise literal "\n" escape sequences (sometimes JSON-encoded twice)
+    var s = String(raw || "").replace(/\\n/g, "\n");
+
+    // 2. Split into lines for line-level processing
+    var lines = s.split("\n");
+    var out = [];
+    var inList = false;
+
+    lines.forEach(function(line) {
+      var t = line.trim();
+
+      // Skip blank lines — we handle spacing via CSS gap
+      if (!t) {
+        if (inList) { out.push("</ul>"); inList = false; }
+        return;
+      }
+
+      // Heading: # Foo  →  plain bold paragraph (conversational tone)
+      if (/^#{1,3}\s+/.test(t)) {
+        if (inList) { out.push("</ul>"); inList = false; }
+        t = t.replace(/^#{1,3}\s+/, "");
+        t = inlineFmt(t);
+        out.push("<p class=\"sm-para sm-para--heading\">" + t + "</p>");
+        return;
+      }
+
+      // Bullet: - item  or  * item  →  <li>
+      if (/^[-*]\s+/.test(t)) {
+        if (!inList) { out.push("<ul class=\"sm-list\">"); inList = true; }
+        t = t.replace(/^[-*]\s+/, "");
+        out.push("<li>" + inlineFmt(t) + "</li>");
+        return;
+      }
+
+      // Regular paragraph
+      if (inList) { out.push("</ul>"); inList = false; }
+      out.push("<p class=\"sm-para\">" + inlineFmt(t) + "</p>");
+    });
+
+    if (inList) out.push("</ul>");
+    return out.join("");
+  }
+
+  // Inline formatting: **bold** → <strong>, strip leftover * / _
+  function inlineFmt(s) {
+    // Escape HTML first so we don't XSS on the inline replacements
+    s = escHtml(s);
+    // **bold** or __bold__
+    s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    s = s.replace(/__(.+?)__/g, "<strong>$1</strong>");
+    // *italic* or _italic_  — strip the markers, keep text
+    s = s.replace(/\*(.+?)\*/g, "$1");
+    s = s.replace(/_(.+?)_/g, "$1");
+    return s;
+  }
+
   // ── Render helpers ────────────────────────────────────────────────────────
   function msgHtml(msg) {
     if (msg.loading) {
       return `<div class="sm-msg-row bot"><div class="sm-typing"><div class="sm-dot"></div><div class="sm-dot"></div><div class="sm-dot"></div></div></div>`;
     }
     const cls = msg.role === "user" ? "user" : (msg.error ? "error" : "bot");
-    let html = `<div class="sm-msg-row ${msg.role === "user" ? "user" : ""}"><div class="sm-bubble ${cls}">${escHtml(msg.text)}</div></div>`;
+    // Bot messages: render formatted HTML. User/error messages: plain escaped text.
+    var bodyHtml = (msg.role === "bot" && !msg.error)
+      ? formatReply(msg.text)
+      : "<p class=\"sm-para\">" + escHtml(msg.text) + "</p>";
+    let html = `<div class="sm-msg-row ${msg.role === "user" ? "user" : ""}"><div class="sm-bubble ${cls}">${bodyHtml}</div></div>`;
     if (msg.products && msg.products.length) {
       html += `<div class="sm-msg-row"><div class="sm-products">`;
       msg.products.forEach(function(p) {
