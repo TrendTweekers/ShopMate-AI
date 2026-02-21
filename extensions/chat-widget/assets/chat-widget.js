@@ -25,6 +25,12 @@
   const BOT_NAME = cfg.botName || "ShopMate";
   const GREETING = cfg.greeting || "Hi! \uD83D\uDC4B How can I help you today?";
   const SESSION_KEY = "shopmate_conv_id";
+  // Quick-reply chips shown below the greeting until the user sends their first message.
+  // Merchants can override via ShopMateConfig.quickReplies (array of strings).
+  // Pass an empty array [] to disable chips entirely.
+  const QUICK_REPLIES = Array.isArray(cfg.quickReplies)
+    ? cfg.quickReplies
+    : ["Track my order", "Recommend a product", "What's your return policy?", "Talk to a human"];
   // Always relative so Shopify's proxy adds the HMAC signature.
   // API_BASE is "" — kept for backward compat if someone sets it.
   const API_URL = API_BASE + "/apps/shopmate/chat";
@@ -36,6 +42,8 @@
   let isLoading = false;
   let conversationId = sessionStorage.getItem(SESSION_KEY) || null;
   let messages = [{ role: "bot", text: GREETING }];
+  // Chips are shown until the user sends their first real message.
+  let chipsVisible = QUICK_REPLIES.length > 0;
 
   // ── DOM refs ────────────────────────────────────────────────────────────
   let widget, bubble, panel, msgList, inputEl, sendBtn;
@@ -126,6 +134,29 @@
     .sm-bubble.bot  { background: #f3f4f6; color: #111827; border-bottom-left-radius: 4px; }
     .sm-bubble.user { background: ${PRIMARY}; color: #fff; border-bottom-right-radius: 4px; }
     .sm-bubble.error { background: #fee2e2; color: #b91c1c; }
+
+    /* Quick-reply chips */
+    .sm-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 0 14px 10px;
+      flex-shrink: 0;
+    }
+    .sm-chip {
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1.5px solid ${PRIMARY};
+      background: #fff;
+      color: ${PRIMARY};
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+      line-height: 1.3;
+      transition: background .12s, color .12s;
+      white-space: nowrap;
+    }
+    .sm-chip:hover { background: ${PRIMARY}; color: #fff; }
 
     /* Formatted bot reply paragraphs & lists */
     .sm-bubble .sm-para {
@@ -297,6 +328,33 @@
     }
     msgList.innerHTML = html;
     msgList.scrollTop = msgList.scrollHeight;
+    renderChips();
+  }
+
+  // ── Quick-reply chips ─────────────────────────────────────────────────────
+  function renderChips() {
+    // Remove any existing chip row so we re-render cleanly.
+    var old = panel.querySelector(".sm-chips");
+    if (old) old.remove();
+
+    if (!chipsVisible || isLoading) return;
+
+    var row = document.createElement("div");
+    row.className = "sm-chips";
+
+    QUICK_REPLIES.forEach(function(label) {
+      var btn = document.createElement("button");
+      btn.className = "sm-chip";
+      btn.textContent = label;
+      btn.addEventListener("click", function() {
+        inputEl.value = label;
+        sendMessage();
+      });
+      row.appendChild(btn);
+    });
+
+    // Insert chips between the message list and the input row.
+    panel.insertBefore(row, panel.querySelector(".sm-input-row"));
   }
 
   // ── API call ──────────────────────────────────────────────────────────────
@@ -316,6 +374,7 @@
     messages.push({ role: "user", text: text });
     inputEl.value = "";
     isLoading = true;
+    chipsVisible = false;  // hide chips permanently once user starts typing
     sendBtn.disabled = true;
     renderMessages();
 
