@@ -1,10 +1,9 @@
 {
-  "ratings": {
-    "stars": {
-      "label": "Ratings"
-    },
-    "home": {
-      "recommendationText": "Recommended Product!"
+  "shopmate": {
+    "widget": {
+      "open_label": "Open ShopMate chat",
+      "input_placeholder": "Type a message\u2026",
+      "tagline": "Always here to help"
     }
   }
 }

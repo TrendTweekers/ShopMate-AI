@@ -1,3 +1,7 @@
-name = "chat-widget"
-type = "theme"
+name = "ShopMate AI Chat Widget"
+handle = "shopmate-chat-widget"
+type = "theme_app_extension"
 uid = "288ab506-3769-fe13-0858-10bbb247f01cb0ff7c2a"
+
+[settings]
+# No extension-level settings; merchant settings live in the block schema below.

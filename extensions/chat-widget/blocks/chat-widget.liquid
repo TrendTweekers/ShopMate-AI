@@ -1,0 +1,70 @@
+{% comment %}
+  ShopMate AI Chat Widget — App Embed Block
+  target: body → injects once into <body> on every storefront page (OS 2.0 App Embed).
+  The JavaScript asset bootstraps the React chat widget via the ShopMate app proxy.
+{% endcomment %}
+
+{% if block.settings.enabled %}
+  <div
+    id="shopmate-ai-root"
+    data-shop="{{ shop.permanent_domain }}"
+    data-primary-color="{{ block.settings.primary_color }}"
+    data-position="{{ block.settings.position }}"
+  ></div>
+
+  <script>
+    window.ShopMateConfig = {
+      shop: {{ shop.permanent_domain | json }},
+      primaryColor: {{ block.settings.primary_color | json }},
+      position: {{ block.settings.position | json }},
+      greeting: {{ block.settings.greeting_message | json }},
+      botName: {{ block.settings.bot_name | json }},
+      apiBase: "https://shopmate-ai-helper-production.up.railway.app"
+    };
+  </script>
+  {{ 'chat-widget.js' | asset_url | script_tag }}
+{% endif %}
+
+{% schema %}
+{
+  "name": "ShopMate AI Chat Widget",
+  "target": "body",
+  "javascript": "chat-widget.js",
+  "settings": [
+    {
+      "type": "checkbox",
+      "id": "enabled",
+      "label": "Enable ShopMate AI",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "bot_name",
+      "label": "Bot name",
+      "default": "ShopMate"
+    },
+    {
+      "type": "text",
+      "id": "greeting_message",
+      "label": "Greeting message",
+      "default": "Hi! \ud83d\udc4b How can I help you today?"
+    },
+    {
+      "type": "color",
+      "id": "primary_color",
+      "label": "Primary colour",
+      "default": "#008060"
+    },
+    {
+      "type": "select",
+      "id": "position",
+      "label": "Widget position",
+      "options": [
+        { "value": "bottom-right", "label": "Bottom right" },
+        { "value": "bottom-left",  "label": "Bottom left"  }
+      ],
+      "default": "bottom-right"
+    }
+  ]
+}
+{% endschema %}
