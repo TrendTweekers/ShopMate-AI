@@ -210,6 +210,23 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return new Response(null, { status: 204, headers: CORS });
   }
 
+  // ── Diagnostic logging ────────────────────────────────────────────────────
+  const url = new URL(request.url);
+  console.log("[appProxy] Incoming request:", {
+    method: request.method,
+    pathname: url.pathname,
+    search: url.search,
+    // Log every query param so we can see if Shopify is sending hmac/shop/timestamp
+    params: Object.fromEntries(url.searchParams.entries()),
+    // Log key headers (lowercased) for debugging
+    xShopifyHmac: request.headers.get("x-shopify-hmac-sha256"),
+    xShopifyShopDomain: request.headers.get("x-shopify-shop-domain"),
+    contentType: request.headers.get("content-type"),
+    // Check that the secret is actually loaded (never log the value!)
+    apiSecretPresent: !!process.env.SHOPIFY_API_SECRET,
+    apiSecretLength: process.env.SHOPIFY_API_SECRET?.length ?? 0,
+  });
+
   // Authenticate via app proxy HMAC (throws on invalid signature)
   let shop: string;
   let adminCtx: AdminApiContext | undefined;
@@ -218,8 +235,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const ctx = await authenticate.public.appProxy(request);
     shop = ctx.session?.shop ?? "";
     adminCtx = ctx.admin ?? undefined;
-  } catch {
-    return Response.json({ error: "Unauthorized" }, { status: 401, headers: CORS });
+    console.log("[appProxy] Auth success — shop:", shop, "| hasAdmin:", !!adminCtx);
+  } catch (err) {
+    // Log the specific error so Railway logs show exactly why HMAC failed
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error("[appProxy] Auth FAILED:", errMsg, {
+      params: Object.fromEntries(url.searchParams.entries()),
+      apiSecretPresent: !!process.env.SHOPIFY_API_SECRET,
+      apiSecretLength: process.env.SHOPIFY_API_SECRET?.length ?? 0,
+    });
+    return Response.json(
+      { error: "Unauthorized", debug: errMsg },
+      { status: 401, headers: CORS },
+    );
   }
 
   if (!shop) {
