@@ -212,20 +212,28 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   // ── Diagnostic logging ────────────────────────────────────────────────────
   const url = new URL(request.url);
-  console.log("[appProxy] Incoming request:", {
-    method: request.method,
-    pathname: url.pathname,
-    search: url.search,
-    // Log every query param so we can see if Shopify is sending hmac/shop/timestamp
-    params: Object.fromEntries(url.searchParams.entries()),
-    // Log key headers (lowercased) for debugging
-    xShopifyHmac: request.headers.get("x-shopify-hmac-sha256"),
-    xShopifyShopDomain: request.headers.get("x-shopify-shop-domain"),
-    contentType: request.headers.get("content-type"),
-    // Check that the secret is actually loaded (never log the value!)
-    apiSecretPresent: !!process.env.SHOPIFY_API_SECRET,
-    apiSecretLength: process.env.SHOPIFY_API_SECRET?.length ?? 0,
-  });
+
+  // Snapshot every query param — HMAC params from Shopify must appear here.
+  // If params is {} the request bypassed the proxy (direct call to Railway).
+  const params = Object.fromEntries(url.searchParams.entries());
+  const hasHmacParams =
+    "hmac" in params || "signature" in params;
+
+  console.log("[appProxy] ── Incoming ──────────────────────────────────────");
+  console.log("[appProxy] method         :", request.method);
+  console.log("[appProxy] pathname       :", url.pathname);
+  console.log("[appProxy] search         :", url.search || "(empty — no HMAC params!)");
+  console.log("[appProxy] hasHmacParams  :", hasHmacParams);
+  console.log("[appProxy] params         :", JSON.stringify(params));
+  // Shopify also sends these headers on proxied requests
+  console.log("[appProxy] x-shopify-shop :", request.headers.get("x-shopify-shop-domain") ?? "(missing)");
+  console.log("[appProxy] x-shopify-hmac :", request.headers.get("x-shopify-hmac-sha256") ?? "(missing)");
+  console.log("[appProxy] content-type   :", request.headers.get("content-type") ?? "(missing)");
+  // Confirm secret is loaded — length tells us if it's the full 32-char key
+  console.log("[appProxy] SHOPIFY_API_SECRET present:", !!process.env.SHOPIFY_API_SECRET);
+  console.log("[appProxy] SHOPIFY_API_SECRET length :", process.env.SHOPIFY_API_SECRET?.length ?? 0, "(expect ~32)");
+  console.log("[appProxy] SHOPIFY_API_KEY length     :", process.env.SHOPIFY_API_KEY?.length ?? 0);
+  console.log("[appProxy] ────────────────────────────────────────────────────");
 
   // Authenticate via app proxy HMAC (throws on invalid signature)
   let shop: string;
@@ -235,17 +243,24 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const ctx = await authenticate.public.appProxy(request);
     shop = ctx.session?.shop ?? "";
     adminCtx = ctx.admin ?? undefined;
-    console.log("[appProxy] Auth success — shop:", shop, "| hasAdmin:", !!adminCtx);
+    console.log("[appProxy] ✓ Auth success — shop:", shop, "| hasAdmin:", !!adminCtx);
   } catch (err) {
-    // Log the specific error so Railway logs show exactly why HMAC failed
-    const errMsg = err instanceof Error ? err.message : String(err);
-    console.error("[appProxy] Auth FAILED:", errMsg, {
-      params: Object.fromEntries(url.searchParams.entries()),
-      apiSecretPresent: !!process.env.SHOPIFY_API_SECRET,
-      apiSecretLength: process.env.SHOPIFY_API_SECRET?.length ?? 0,
-    });
+    // Capture message AND cause — shopify-app-react-router wraps the raw error
+    const errMsg   = err instanceof Error ? err.message   : String(err);
+    const errCause = err instanceof Error && err.cause
+      ? (err.cause instanceof Error ? err.cause.message : String(err.cause))
+      : "(no cause)";
+    const errStack = err instanceof Error ? (err.stack ?? "").split("\n").slice(0,4).join(" | ") : "";
+
+    console.error("[appProxy] ✗ Auth FAILED");
+    console.error("[appProxy]   message :", errMsg);
+    console.error("[appProxy]   cause   :", errCause);
+    console.error("[appProxy]   stack   :", errStack);
+    console.error("[appProxy]   params  :", JSON.stringify(params));
+    console.error("[appProxy]   secretOk:", !!process.env.SHOPIFY_API_SECRET, "len:", process.env.SHOPIFY_API_SECRET?.length ?? 0);
+
     return Response.json(
-      { error: "Unauthorized", debug: errMsg },
+      { error: "Unauthorized", debug: errMsg, cause: errCause },
       { status: 401, headers: CORS },
     );
   }

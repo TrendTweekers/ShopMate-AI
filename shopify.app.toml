@@ -35,6 +35,11 @@ redirect_urls = [
 ]
 
 [app_proxy]
-url = "https://shopmate-ai-helper-production.up.railway.app/apps/shopmate"
-subpath = "shopmate"
+# Shopify forwards: myshopify.com/{prefix}/{subpath}/* → {url}/{prefix}/{subpath}/*
+# The url must be the backend ROOT — Shopify appends the full path automatically.
+# Previous value included /apps/shopmate in the url, causing the forwarded path to
+# become /apps/shopmate/shopmate/chat (double segment) which breaks HMAC validation
+# because the signature is computed over the actual forwarded URL.
+url = "https://shopmate-ai-helper-production.up.railway.app"
 prefix = "apps"
+subpath = "shopmate/chat"
