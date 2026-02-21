@@ -6,6 +6,17 @@
 (function () {
   "use strict";
 
+  // ── Double-injection guard ──────────────────────────────────────────────
+  // The schema's "javascript" key AND the explicit script_tag filter can both
+  // load this file, causing the IIFE to run twice. The second run re-queries
+  // the same DOM IDs, binds stale references, and silently drops all sends.
+  // Guard: bail out if we've already initialised.
+  if (window.__shopMateWidgetLoaded) {
+    console.warn("[ShopMate] chat-widget.js loaded twice — skipping second init.");
+    return;
+  }
+  window.__shopMateWidgetLoaded = true;
+
   const cfg = window.ShopMateConfig || {};
   const SHOP = cfg.shop || "";
   const API_BASE = cfg.apiBase || "";
@@ -14,7 +25,11 @@
   const BOT_NAME = cfg.botName || "ShopMate";
   const GREETING = cfg.greeting || "Hi! \uD83D\uDC4B How can I help you today?";
   const SESSION_KEY = "shopmate_conv_id";
+  // Always relative so Shopify's proxy adds the HMAC signature.
+  // API_BASE is "" — kept for backward compat if someone sets it.
   const API_URL = API_BASE + "/apps/shopmate/chat";
+
+  console.log("[ShopMate] Initialising. API_URL:", API_URL, "| SHOP:", SHOP);
 
   // ── State ──────────────────────────────────────────────────────────────
   let isOpen = false;
@@ -169,7 +184,7 @@
     let html = `<div class="sm-msg-row ${msg.role === "user" ? "user" : ""}"><div class="sm-bubble ${cls}">${escHtml(msg.text)}</div></div>`;
     if (msg.products && msg.products.length) {
       html += `<div class="sm-msg-row"><div class="sm-products">`;
-      msg.products.forEach(p => {
+      msg.products.forEach(function(p) {
         html += `<a class="sm-product-card" href="${escHtml(p.url)}" target="_blank" rel="noopener noreferrer">
           <img class="sm-product-img" src="${escHtml(p.image || "")}" alt="${escHtml(p.title)}" onerror="this.style.display='none'">
           <div><div class="sm-product-title">${escHtml(p.title)}</div><div class="sm-product-price">${escHtml(p.price)}</div></div>
@@ -185,7 +200,7 @@
   }
 
   function renderMessages() {
-    let html = messages.map(msgHtml).join("");
+    var html = messages.map(msgHtml).join("");
     if (isLoading) {
       html += `<div class="sm-msg-row bot"><div class="sm-typing"><div class="sm-dot"></div><div class="sm-dot"></div><div class="sm-dot"></div></div></div>`;
     }
@@ -193,40 +208,63 @@
     msgList.scrollTop = msgList.scrollHeight;
   }
 
-  // ── API call ─────────────────────────────────────────────────────────────
-  async function sendMessage() {
-    const text = inputEl.value.trim();
-    if (!text || isLoading) return;
+  // ── API call ──────────────────────────────────────────────────────────────
+  function sendMessage() {
+    // Read directly from the live DOM node (not a closure copy).
+    var text = inputEl.value.trim();
 
-    messages.push({ role: "user", text });
+    console.log("[ShopMate] sendMessage() called | text:", JSON.stringify(text), "| isLoading:", isLoading);
+    console.log("[ShopMate] inputEl connected:", document.body.contains(inputEl));
+    console.log("[ShopMate] sendBtn connected:", document.body.contains(sendBtn));
+
+    if (!text || isLoading) {
+      console.log("[ShopMate] Aborted — empty text or already loading.");
+      return;
+    }
+
+    messages.push({ role: "user", text: text });
     inputEl.value = "";
     isLoading = true;
     sendBtn.disabled = true;
     renderMessages();
 
-    try {
-      const res = await fetch(API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, conversationId, shop: SHOP }),
+    console.log("[ShopMate] Fetching", API_URL);
+
+    fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text, conversationId: conversationId, shop: SHOP }),
+    })
+      .then(function(res) {
+        console.log("[ShopMate] Response status:", res.status);
+        if (!res.ok) {
+          return res.json().then(function(body) {
+            console.error("[ShopMate] Error body:", JSON.stringify(body));
+            throw new Error("HTTP " + res.status + (body.debug ? " — " + body.debug : ""));
+          }).catch(function() {
+            throw new Error("HTTP " + res.status);
+          });
+        }
+        return res.json();
+      })
+      .then(function(data) {
+        console.log("[ShopMate] Reply received:", data.reply && data.reply.slice(0, 60));
+        if (data.conversationId) {
+          conversationId = data.conversationId;
+          sessionStorage.setItem(SESSION_KEY, conversationId);
+        }
+        messages.push({ role: "bot", text: data.reply, products: data.products });
+      })
+      .catch(function(err) {
+        console.error("[ShopMate] Fetch error:", err.message);
+        messages.push({ role: "bot", text: "Sorry, I\u2019m having trouble connecting. Please try again.", error: true });
+      })
+      .finally(function() {
+        isLoading = false;
+        sendBtn.disabled = false;
+        renderMessages();
+        inputEl.focus();
       });
-
-      if (!res.ok) throw new Error("HTTP " + res.status);
-
-      const data = await res.json();
-      if (data.conversationId) {
-        conversationId = data.conversationId;
-        sessionStorage.setItem(SESSION_KEY, conversationId);
-      }
-      messages.push({ role: "bot", text: data.reply, products: data.products });
-    } catch (err) {
-      messages.push({ role: "bot", text: "Sorry, I\u2019m having trouble connecting. Please try again.", error: true });
-    } finally {
-      isLoading = false;
-      sendBtn.disabled = false;
-      renderMessages();
-      inputEl.focus();
-    }
   }
 
   // ── Toggle ────────────────────────────────────────────────────────────────
@@ -243,27 +281,57 @@
 
   // ── Build DOM ─────────────────────────────────────────────────────────────
   function init() {
+    // Remove any previously-injected widget (safety net for hot reloads).
+    var existing = document.getElementById("shopmate-widget");
+    if (existing) existing.remove();
+
     widget = document.createElement("div");
     widget.id = "shopmate-widget";
 
-    // Panel
+    // Panel — built with createElement so event bindings are on real nodes,
+    // not innerHTML-parsed clones that lose listeners.
     panel = document.createElement("div");
     panel.id = "shopmate-widget-panel";
     panel.className = "sm-hidden";
-    panel.innerHTML = `
-      <div class="sm-header">
-        <div class="sm-header-icon">${iconChat}</div>
-        <div>
-          <div class="sm-header-name">${escHtml(BOT_NAME)}</div>
-          <div class="sm-header-sub">Always here to help</div>
-        </div>
-      </div>
-      <div class="sm-messages" id="sm-messages"></div>
-      <div class="sm-input-row">
-        <input class="sm-input" id="sm-input" type="text" placeholder="Type a message\u2026" autocomplete="off">
-        <button class="sm-send" id="sm-send">${iconSend}</button>
+
+    // Header
+    var header = document.createElement("div");
+    header.className = "sm-header";
+    header.innerHTML = `
+      <div class="sm-header-icon">${iconChat}</div>
+      <div>
+        <div class="sm-header-name">${escHtml(BOT_NAME)}</div>
+        <div class="sm-header-sub">Always here to help</div>
       </div>
     `;
+
+    // Message list
+    msgList = document.createElement("div");
+    msgList.className = "sm-messages";
+    msgList.id = "sm-messages";
+
+    // Input row — create each element individually so refs are exact nodes,
+    // not getElementById lookups that could collide with a second injection.
+    var inputRow = document.createElement("div");
+    inputRow.className = "sm-input-row";
+
+    inputEl = document.createElement("input");
+    inputEl.className = "sm-input";
+    inputEl.type = "text";
+    inputEl.placeholder = "Type a message\u2026";
+    inputEl.autocomplete = "off";
+
+    sendBtn = document.createElement("button");
+    sendBtn.className = "sm-send";
+    sendBtn.setAttribute("aria-label", "Send");
+    sendBtn.innerHTML = iconSend;
+
+    inputRow.appendChild(inputEl);
+    inputRow.appendChild(sendBtn);
+
+    panel.appendChild(header);
+    panel.appendChild(msgList);
+    panel.appendChild(inputRow);
 
     // Bubble
     bubble = document.createElement("button");
@@ -276,16 +344,21 @@
     widget.appendChild(bubble);
     document.body.appendChild(widget);
 
-    msgList = document.getElementById("sm-messages");
-    inputEl = document.getElementById("sm-input");
-    sendBtn = document.getElementById("sm-send");
+    // Bind events directly to the nodes we hold references to.
+    sendBtn.addEventListener("click", function() {
+      console.log("[ShopMate] Send button clicked");
+      sendMessage();
+    });
+    inputEl.addEventListener("keydown", function(e) {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        console.log("[ShopMate] Enter key pressed");
+        sendMessage();
+      }
+    });
 
     renderMessages();
-
-    sendBtn.addEventListener("click", sendMessage);
-    inputEl.addEventListener("keydown", function (e) {
-      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-    });
+    console.log("[ShopMate] Widget ready. sendBtn in DOM:", document.body.contains(sendBtn));
   }
 
   if (document.readyState === "loading") {
