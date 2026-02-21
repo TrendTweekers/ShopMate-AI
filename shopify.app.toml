@@ -35,18 +35,14 @@ redirect_urls = [
 ]
 
 [app_proxy]
-# Shopify proxy forwarding rule (from docs):
+# Shopify proxy forwarding rule:
 #   storefront: myshopify.com/{prefix}/{subpath}/{rest}
 #   forwarded:  {url}/{rest}
 #
-# Example from Shopify docs:
-#   prefix = "apps", subpath = "awesome_reviews", url = "https://proxy-domain.com/proxy"
-#   /apps/awesome_reviews/extra/path → https://proxy-domain.com/proxy/extra/path
-#
-# For ShopMate: storefront /apps/shopmate/chat → Railway /apps/shopmate/chat
-#   prefix  = "apps"
-#   subpath = "shopmate"       → Shopify matches /apps/shopmate/*
-#   url     = "https://...railway.app/apps/shopmate"  → Shopify appends /chat → /apps/shopmate/chat ✓
+# subpath = "shopmate" → Shopify owns /apps/shopmate and all paths under it.
+# url ends with /apps/shopmate so that {rest}=/chat is appended correctly:
+#   /apps/shopmate       → railway.app/apps/shopmate        (caught by apps.shopmate.tsx)
+#   /apps/shopmate/chat  → railway.app/apps/shopmate/chat   (caught by apps.shopmate.chat.tsx)
 url = "https://shopmate-ai-helper-production.up.railway.app/apps/shopmate"
 prefix = "apps"
 subpath = "shopmate"
