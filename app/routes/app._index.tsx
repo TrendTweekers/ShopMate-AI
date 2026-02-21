@@ -1,6 +1,6 @@
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useLoaderData } from "react-router";
-import { MessageSquare, ShieldCheck, Clock, TrendingUp } from "lucide-react";
+import { MessageSquare, ShieldCheck, Clock, TrendingUp, Zap } from "lucide-react";
 import KpiCard from "~/components/admin/KpiCard";
 import {
   BarChart,
@@ -16,6 +16,8 @@ import {
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "~/db.server";
+
+const FREE_LIMIT = 50;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -36,8 +38,23 @@ function last7DayBoundaries(): Date[] {
 // ─── Loader ───────────────────────────────────────────────────────────────────
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, billing } = await authenticate.admin(request);
   const shop = session.shop;
+
+  // ── Billing check ──
+  // hasActivePayment returns true if the shop has any active recurring charge.
+  const { hasActivePayment } = await billing.check({
+    plans: ["ShopMate Pro"],
+    isTest: process.env.NODE_ENV !== "production",
+  });
+
+  // ── Sync plan to DB ──
+  const newPlan = hasActivePayment ? "pro" : "free";
+  const settings = await prisma.shopSettings.upsert({
+    where: { shop },
+    create: { shop, plan: newPlan },
+    update: { plan: newPlan },
+  });
 
   // ── KPI totals ──
   const totalChats = await prisma.conversation.count({ where: { shop } });
@@ -119,6 +136,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       firstMessage: c.messages[0]?.content ?? null,
       updatedAt: c.updatedAt.toISOString(),
     })),
+    // Plan & usage
+    plan: settings.plan as "free" | "pro",
+    messageCount: settings.messageCount,
+    freeLimit: FREE_LIMIT,
+    // Billing redirect URL — merchant clicks this to subscribe
+    billingUrl: `/app/billing`,
   };
 };
 
@@ -137,11 +160,87 @@ function timeAgo(isoDate: string): string {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
-  const { totalChats, deflectionRate, avgMessages, chatData, messageData, latestConversations } =
-    useLoaderData<typeof loader>();
+  const {
+    totalChats,
+    deflectionRate,
+    avgMessages,
+    chatData,
+    messageData,
+    latestConversations,
+    plan,
+    messageCount,
+    freeLimit,
+    billingUrl,
+  } = useLoaderData<typeof loader>();
+
+  const isPro = plan === "pro";
+  const usagePct = isPro ? 100 : Math.min(100, Math.round((messageCount / freeLimit) * 100));
+  const usageColor = usagePct >= 90 ? "#b91c1c" : usagePct >= 70 ? "#d97706" : "#008060";
 
   return (
     <div className="space-y-6 max-w-6xl">
+      {/* Plan banner */}
+      <div
+        style={{
+          background: isPro ? "hsl(160 100% 96%)" : usagePct >= 90 ? "#fff7ed" : "hsl(210 10% 98%)",
+          border: `1px solid ${isPro ? "#008060" : usagePct >= 90 ? "#f97316" : "hsl(210 10% 89%)"}`,
+          borderRadius: 10,
+          padding: "14px 18px",
+          display: "flex",
+          alignItems: "center",
+          gap: 16,
+          flexWrap: "wrap" as const,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Zap size={16} color={isPro ? "#008060" : "#6b7280"} />
+          <span style={{ fontWeight: 600, fontSize: 14, color: isPro ? "#008060" : "#111827" }}>
+            {isPro ? "ShopMate Pro — Unlimited messages" : `Free plan — ${messageCount} / ${freeLimit} messages used this month`}
+          </span>
+        </div>
+
+        {!isPro && (
+          <div style={{ flex: 1, minWidth: 160 }}>
+            <div
+              style={{
+                height: 6,
+                borderRadius: 999,
+                background: "hsl(210 10% 89%)",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  height: "100%",
+                  width: `${usagePct}%`,
+                  background: usageColor,
+                  borderRadius: 999,
+                  transition: "width .3s ease",
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {!isPro && (
+          <a
+            href={billingUrl}
+            style={{
+              padding: "6px 14px",
+              borderRadius: 8,
+              background: "#008060",
+              color: "#fff",
+              fontSize: 13,
+              fontWeight: 600,
+              textDecoration: "none",
+              whiteSpace: "nowrap" as const,
+            }}
+          >
+            Upgrade to Pro — $29/mo
+          </a>
+        )}
+      </div>
+
       <div>
         <h2 className="text-xl font-semibold text-foreground">Overview</h2>
         <p className="text-sm text-muted-foreground mt-1">

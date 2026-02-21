@@ -31,6 +31,23 @@ model Message {
   createdAt      DateTime     @default(now())
 }
 
+// Per-shop settings, billing state, and usage tracking.
+// One row per shop — upserted on first chat or admin load.
+model ShopSettings {
+  id              String    @id @default(cuid())
+  shop            String    @unique
+  // Billing
+  plan            String    @default("free")   // "free" | "pro"
+  billingId       String?                       // Shopify subscription GID
+  // Freemium usage (reset monthly)
+  messageCount    Int       @default(0)
+  lastReset       DateTime  @default(now())
+  // Review prompt
+  reviewPrompted  Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
 model Session {
   id            String    @id
   shop          String
