@@ -7,7 +7,17 @@ import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await authenticate.admin(request);
-  return { apiKey: process.env.SHOPIFY_API_KEY || "" };
+
+  // AppProvider from @shopify/shopify-app-react-router reads the `host`
+  // query-param automatically from window.location.search — we do NOT pass
+  // it as a prop (the type doesn't accept it).  We only need to return the
+  // apiKey here so the provider can initialise App Bridge correctly and
+  // derive the correct postMessage target origin (admin.shopify.com) from
+  // the base64-encoded ?host= value that Shopify injects into every
+  // embedded-app URL.
+  return {
+    apiKey: process.env.SHOPIFY_API_KEY || "",
+  };
 };
 
 export default function AppLayout() {

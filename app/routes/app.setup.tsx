@@ -1,17 +1,32 @@
-import { useState } from "react";
-import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
+import { useState, useEffect } from "react";
+import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
+import { useFetcher, useNavigate } from "react-router";
 import { Check, ArrowRight, ArrowLeft, Bot, Package, Sparkles, BookOpen, Zap } from "lucide-react";
+import { useAppBridge } from "@shopify/app-bridge-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Switch } from "~/components/ui/switch";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
+// ─── Loader ──────────────────────────────────────────────────────────────────
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await authenticate.admin(request);
   return null;
 };
 
+// ─── Action ──────────────────────────────────────────────────────────────────
+// The Activate button POSTs here.  We use it to persist the "activated" flag
+// and return a success signal back to the client.
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { session } = await authenticate.admin(request);
+  // In the future: save ShopSettings.activated = true via Prisma here.
+  // For now just acknowledge — the client will show the toast + redirect.
+  console.log(`[ShopMate] Activated for shop: ${session.shop}`);
+  return Response.json({ ok: true, shop: session.shop });
+};
+
+// ─── Steps ───────────────────────────────────────────────────────────────────
 const steps = [
   { title: "Welcome", description: "Configure your AI assistant", icon: Bot },
   { title: "Order Tracking", description: "Set up order lookup", icon: Package },
@@ -20,8 +35,30 @@ const steps = [
   { title: "Go Live", description: "Activate on your store", icon: Zap },
 ];
 
+// ─── Component ───────────────────────────────────────────────────────────────
 export default function SetupWizard() {
   const [currentStep, setCurrentStep] = useState(0);
+  const fetcher = useFetcher<{ ok: boolean }>();
+  const shopify = useAppBridge();
+  const navigate = useNavigate();
+
+  const isActivating = fetcher.state !== "idle";
+  const activationDone = fetcher.data?.ok === true;
+
+  // When the fetcher settles with ok:true, show an App Bridge toast then
+  // navigate to the dashboard using React Router (not shopify.navigate which
+  // doesn't exist on ShopifyGlobal).
+  useEffect(() => {
+    if (activationDone && fetcher.state === "idle") {
+      shopify.toast.show("ShopMate AI activated! 🎉", { duration: 4000 });
+      const timer = setTimeout(() => navigate("/app"), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [activationDone, fetcher.state, shopify, navigate]);
+
+  const handleActivate = () => {
+    fetcher.submit({}, { method: "POST", action: "/app/setup" });
+  };
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -62,7 +99,10 @@ export default function SetupWizard() {
             <h4 className="text-sm font-semibold text-foreground">Bot Name</h4>
             <Input placeholder="ShopMate" defaultValue="ShopMate" />
             <h4 className="text-sm font-semibold text-foreground">Greeting Message</h4>
-            <Input placeholder="Hi! How can I help you today?" defaultValue="Hi! 👋 How can I help you today?" />
+            <Input
+              placeholder="Hi! How can I help you today?"
+              defaultValue="Hi! 👋 How can I help you today?"
+            />
             <h4 className="text-sm font-semibold text-foreground">Tone</h4>
             <div className="flex gap-2">
               {["Friendly", "Professional", "Casual"].map((t) => (
@@ -135,7 +175,10 @@ export default function SetupWizard() {
             <h4 className="text-sm font-semibold text-foreground">Policies</h4>
             <div className="space-y-3">
               {["Return Policy", "Shipping Policy", "Size Guide"].map((policy) => (
-                <div key={policy} className="flex items-center justify-between p-3 border border-border rounded-lg">
+                <div
+                  key={policy}
+                  className="flex items-center justify-between p-3 border border-border rounded-lg"
+                >
                   <div className="flex items-center gap-2">
                     <BookOpen className="w-4 h-4 text-muted-foreground" />
                     <span className="text-sm text-foreground">{policy}</span>
@@ -157,8 +200,16 @@ export default function SetupWizard() {
               Your ShopMate AI assistant is configured and ready. Click "Activate" to add the chat
               widget to your storefront.
             </p>
-            <Button className="bg-primary text-primary-foreground hover:bg-primary/90 px-8">
-              Activate ShopMate AI
+            <Button
+              onClick={handleActivate}
+              disabled={isActivating || activationDone}
+              className="bg-primary text-primary-foreground hover:bg-primary/90 px-8"
+            >
+              {isActivating
+                ? "Activating…"
+                : activationDone
+                ? "Activated ✓"
+                : "Activate ShopMate AI"}
             </Button>
           </div>
         )}
