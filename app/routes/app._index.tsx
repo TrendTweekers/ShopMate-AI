@@ -122,6 +122,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const avgMessages =
     totalChats > 0 ? (totalMessages / totalChats).toFixed(1) : "0";
 
+  // ── Review stats ──
+  const reviewStats = {
+    hasReviewed: settings.hasReviewed ?? false,
+    reviewDismissedCount: settings.reviewDismissedCount ?? 0,
+    reviewRequestedAt: settings.reviewRequestedAt?.toISOString() ?? null,
+    aiHandledChats: settings.aiHandledChats ?? 0,
+    orderTrackingResolved: settings.orderTrackingResolved ?? 0,
+  };
+
   return {
     totalChats,
     totalMessages,
@@ -142,6 +151,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     freeLimit: FREE_LIMIT,
     // Billing redirect URL — merchant clicks this to subscribe
     billingUrl: `/app/billing`,
+    // Review stats
+    reviewStats,
   };
 };
 
@@ -171,6 +182,7 @@ export default function Dashboard() {
     messageCount,
     freeLimit,
     billingUrl,
+    reviewStats,
   } = useLoaderData<typeof loader>();
 
   const isPro = plan === "pro";
@@ -327,6 +339,51 @@ export default function Dashboard() {
             </LineChart>
           </ResponsiveContainer>
         </div>
+      </div>
+
+      {/* Review Stats */}
+      <div className="polaris-card">
+        <h3 className="polaris-card-header">Review & Engagement</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, padding: "4px 0 8px" }}>
+          {/* Reviewed status */}
+          <div style={{ textAlign: "center", padding: "10px 8px", borderRadius: 8, background: reviewStats.hasReviewed ? "hsl(160 100% 96%)" : "hsl(210 10% 98%)", border: `1px solid ${reviewStats.hasReviewed ? "#008060" : "hsl(210 10% 89%)"}` }}>
+            <div style={{ fontSize: 22, marginBottom: 2 }}>{reviewStats.hasReviewed ? "⭐" : "💬"}</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: reviewStats.hasReviewed ? "#008060" : "#374151" }}>
+              {reviewStats.hasReviewed ? "Reviewed!" : "Not yet reviewed"}
+            </div>
+            <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>App Store review</div>
+          </div>
+
+          {/* AI-handled chats */}
+          <div style={{ textAlign: "center", padding: "10px 8px", borderRadius: 8, background: "hsl(210 10% 98%)", border: "1px solid hsl(210 10% 89%)" }}>
+            <div style={{ fontSize: 22, marginBottom: 2 }}>🤖</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#111827" }}>{reviewStats.aiHandledChats}</div>
+            <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>AI-handled chats</div>
+          </div>
+
+          {/* Order tracking resolved */}
+          <div style={{ textAlign: "center", padding: "10px 8px", borderRadius: 8, background: "hsl(210 10% 98%)", border: "1px solid hsl(210 10% 89%)" }}>
+            <div style={{ fontSize: 22, marginBottom: 2 }}>📦</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#111827" }}>{reviewStats.orderTrackingResolved}</div>
+            <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>Orders tracked</div>
+          </div>
+
+          {/* Dismiss count */}
+          <div style={{ textAlign: "center", padding: "10px 8px", borderRadius: 8, background: "hsl(210 10% 98%)", border: "1px solid hsl(210 10% 89%)" }}>
+            <div style={{ fontSize: 22, marginBottom: 2 }}>{reviewStats.reviewDismissedCount >= 2 ? "🔕" : "🔔"}</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#111827" }}>{reviewStats.reviewDismissedCount}</div>
+            <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>
+              {reviewStats.reviewDismissedCount >= 2 ? "Review prompt paused" : "Times dismissed"}
+            </div>
+          </div>
+        </div>
+
+        {/* Last review request */}
+        {reviewStats.reviewRequestedAt && (
+          <p style={{ fontSize: 11, color: "#9ca3af", margin: "4px 0 0", textAlign: "right" }}>
+            Review prompt last shown: {timeAgo(reviewStats.reviewRequestedAt)}
+          </p>
+        )}
       </div>
 
       {/* Recent Conversations */}

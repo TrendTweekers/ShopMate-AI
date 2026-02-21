@@ -158,34 +158,96 @@
     }
     .sm-chip:hover { background: ${PRIMARY}; color: #fff; }
 
-    /* Review popup */
+    /* ── Review popup (all 3 versions share this base) ── */
     .sm-review-popup {
       position: absolute;
       bottom: 100%;
       ${POSITION === "bottom-left" ? "left: 0;" : "right: 0;"}
       margin-bottom: 10px;
-      width: 260px;
+      width: 280px;
       background: #fff;
       border: 1px solid #e5e7eb;
       border-radius: 14px;
-      box-shadow: 0 4px 20px rgba(0,0,0,.14);
-      padding: 14px 16px;
+      box-shadow: 0 4px 24px rgba(0,0,0,.16);
+      padding: 16px;
       font-size: 13px;
       z-index: 2147483647;
-      animation: sm-popup-in .2s ease;
+      animation: sm-popup-in .22s ease;
     }
-    @keyframes sm-popup-in { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform: translateY(0); } }
+    /* Version 3: small banner variant */
+    .sm-review-popup.sm-review-banner {
+      padding: 10px 14px;
+      width: 260px;
+    }
+    @keyframes sm-popup-in { from { opacity:0; transform: translateY(8px); } to { opacity:1; transform: translateY(0); } }
+
+    /* Celebration header (Version 1) */
+    .sm-review-celebrate {
+      text-align: center;
+      margin-bottom: 10px;
+    }
+    .sm-review-celebrate .sm-review-emoji {
+      font-size: 28px;
+      display: block;
+      margin-bottom: 4px;
+    }
+    .sm-review-celebrate .sm-review-title {
+      font-weight: 700;
+      font-size: 14px;
+      color: #111827;
+      margin: 0 0 4px;
+    }
+    .sm-review-celebrate .sm-review-sub {
+      font-size: 12px;
+      color: #6b7280;
+      margin: 0;
+    }
+
+    /* Sentiment row (Version 2) */
+    .sm-review-sentiment {
+      display: flex;
+      justify-content: center;
+      gap: 14px;
+      margin: 10px 0 6px;
+    }
+    .sm-review-sentiment button {
+      font-size: 22px;
+      background: none;
+      border: 2px solid transparent;
+      border-radius: 50%;
+      width: 44px; height: 44px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: border-color .12s, background .12s;
+      padding: 0;
+    }
+    .sm-review-sentiment button:hover { border-color: ${PRIMARY}; background: hsl(160 100% 96%); }
+    .sm-review-sentiment-label {
+      font-size: 11px;
+      color: #6b7280;
+      text-align: center;
+      margin-bottom: 8px;
+    }
+
+    /* Shared action buttons */
     .sm-review-popup p { margin: 0 0 10px; line-height: 1.4; color: #111827; }
     .sm-review-actions { display: flex; gap: 8px; }
     .sm-review-yes {
-      flex: 1; padding: 6px; border-radius: 8px; border: none;
+      flex: 1; padding: 7px; border-radius: 8px; border: none;
       background: ${PRIMARY}; color: #fff; font-size: 12px; font-weight: 600;
-      cursor: pointer;
+      cursor: pointer; text-align: center; text-decoration: none; display: block;
     }
+    .sm-review-yes:hover { opacity: .9; }
     .sm-review-dismiss {
-      padding: 6px 10px; border-radius: 8px;
+      padding: 7px 10px; border-radius: 8px;
       border: 1px solid #d1d5db; background: #fff; color: #6b7280;
       font-size: 12px; cursor: pointer;
+    }
+    /* Banner dismiss ✕ */
+    .sm-review-banner-dismiss {
+      position: absolute; top: 8px; right: 10px;
+      background: none; border: none; cursor: pointer;
+      color: #9ca3af; font-size: 16px; line-height: 1; padding: 0;
     }
 
     /* Formatted bot reply paragraphs & lists */
@@ -459,7 +521,9 @@
         messages.push({ role: "bot", text: data.reply, products: data.products });
         // ── Review popup ───────────────────────────────────────────────────
         if (data.showReview) {
-          setTimeout(showReviewPopup, 800);
+          setTimeout(function() {
+            showReviewPopup(data.reviewTrigger || null, data.aiHandledChats || 0);
+          }, 900);
         }
         // ── Remaining usage hint ───────────────────────────────────────────
         if (typeof data.remaining === "number" && data.remaining <= 10 && data.remaining > 0) {
@@ -483,45 +547,166 @@
       });
   }
 
-  // ── Review popup ──────────────────────────────────────────────────────────
-  // Shows once per shop session — the backend sets reviewPrompted=true so it
-  // won't trigger again after the next page load.
-  function showReviewPopup() {
-    // Don't show if already displayed this session
+  // ── Review system ──────────────────────────────────────────────────────────
+  var REVIEW_URL = "https://apps.shopify.com/shopmate-ai/reviews/new";
+
+  /** POST review feedback to the proxy so the backend can update DB */
+  function sendReviewFeedback(reviewAction) {
+    fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reviewAction: reviewAction }),
+    }).catch(function(e) {
+      console.warn("[ShopMate] Review feedback failed:", e.message);
+    });
+  }
+
+  /**
+   * showReviewPopup(trigger, aiHandledChats)
+   *
+   * Version 1 — Celebration Modal  (trigger = "ai_handled" | "usage_milestone")
+   * Version 2 — Sentiment Gate     (trigger = "order_tracking")
+   * Version 3 — Small Banner       (fallback / no trigger data)
+   *
+   * Each version:
+   *   "Leave a review" → open review link + sendReviewFeedback("reviewed")
+   *   "Maybe later" / dismiss → sendReviewFeedback("dismissed") + remove popup
+   */
+  function showReviewPopup(trigger, aiHandledChats) {
+    // Only one popup at a time
     if (document.getElementById("sm-review-popup")) return;
 
     var popup = document.createElement("div");
-    popup.className = "sm-review-popup";
     popup.id = "sm-review-popup";
 
-    var p = document.createElement("p");
-    p.textContent = "Enjoying ShopMate? A quick review helps other merchants find us! \u2B50";
-    popup.appendChild(p);
+    function onReview() {
+      window.open(REVIEW_URL, "_blank", "noopener,noreferrer");
+      sendReviewFeedback("reviewed");
+      popup.remove();
+    }
+    function onDismiss() {
+      sendReviewFeedback("dismissed");
+      popup.remove();
+    }
 
-    var actions = document.createElement("div");
-    actions.className = "sm-review-actions";
+    // ── Choose version based on trigger ───────────────────────────────────
+    if (trigger === "ai_handled" || trigger === "usage_milestone") {
+      // ── Version 1: Celebration Modal ─────────────────────────────────────
+      popup.className = "sm-review-popup";
 
-    var yesBtn = document.createElement("a");
-    yesBtn.className = "sm-review-yes";
-    yesBtn.textContent = "Leave a review";
-    yesBtn.href = "https://apps.shopify.com/shopmate-ai/reviews/new";
-    yesBtn.target = "_blank";
-    yesBtn.rel = "noopener noreferrer";
-    yesBtn.style.textAlign = "center";
-    yesBtn.style.textDecoration = "none";
-    yesBtn.style.display = "block";
-    yesBtn.addEventListener("click", function() { popup.remove(); });
+      var celebrate = document.createElement("div");
+      celebrate.className = "sm-review-celebrate";
 
-    var dismissBtn = document.createElement("button");
-    dismissBtn.className = "sm-review-dismiss";
-    dismissBtn.textContent = "Maybe later";
-    dismissBtn.addEventListener("click", function() { popup.remove(); });
+      var emoji = document.createElement("span");
+      emoji.className = "sm-review-emoji";
+      emoji.textContent = "\uD83C\uDF89"; // 🎉
+      celebrate.appendChild(emoji);
 
-    actions.appendChild(yesBtn);
-    actions.appendChild(dismissBtn);
-    popup.appendChild(actions);
+      var title = document.createElement("p");
+      title.className = "sm-review-title";
+      var chatCount = typeof aiHandledChats === "number" && aiHandledChats > 0
+        ? aiHandledChats
+        : 3;
+      title.textContent = "ShopMate has handled " + chatCount + " customer chat" + (chatCount !== 1 ? "s" : "") + "!";
+      celebrate.appendChild(title);
 
-    // Anchor to the widget container so it floats above the bubble
+      var sub = document.createElement("p");
+      sub.className = "sm-review-sub";
+      sub.textContent = "Leave us a quick review \u2014 it only takes 30 seconds \u2B50";
+      celebrate.appendChild(sub);
+
+      popup.appendChild(celebrate);
+
+      var actions = document.createElement("div");
+      actions.className = "sm-review-actions";
+
+      var yesBtn = document.createElement("button");
+      yesBtn.className = "sm-review-yes";
+      yesBtn.textContent = "\u2B50 Leave a Review";
+      yesBtn.addEventListener("click", onReview);
+
+      var dismissBtn = document.createElement("button");
+      dismissBtn.className = "sm-review-dismiss";
+      dismissBtn.textContent = "Maybe later";
+      dismissBtn.addEventListener("click", onDismiss);
+
+      actions.appendChild(yesBtn);
+      actions.appendChild(dismissBtn);
+      popup.appendChild(actions);
+
+    } else if (trigger === "order_tracking") {
+      // ── Version 2: Sentiment Gate ─────────────────────────────────────────
+      popup.className = "sm-review-popup";
+
+      var p2 = document.createElement("p");
+      p2.style.cssText = "margin:0 0 4px;font-weight:600;color:#111827;font-size:13px;";
+      p2.textContent = "How was your experience?";
+      popup.appendChild(p2);
+
+      var sentLabel = document.createElement("div");
+      sentLabel.className = "sm-review-sentiment-label";
+      sentLabel.textContent = "Tap a reaction to share feedback";
+      popup.appendChild(sentLabel);
+
+      var sentRow = document.createElement("div");
+      sentRow.className = "sm-review-sentiment";
+
+      var emojis = [
+        { icon: "\uD83D\uDE0A", label: "Love it", positive: true },   // 😊
+        { icon: "\uD83D\uDE10", label: "It\u2019s okay", positive: false }, // 😐
+        { icon: "\uD83D\uDE1F", label: "Not great", positive: false }, // 😟
+      ];
+
+      emojis.forEach(function(e) {
+        var btn = document.createElement("button");
+        btn.title = e.label;
+        btn.textContent = e.icon;
+        btn.addEventListener("click", function() {
+          if (e.positive) {
+            // Route to review link
+            onReview();
+          } else {
+            // Just dismiss — they didn't have a great experience
+            onDismiss();
+          }
+        });
+        sentRow.appendChild(btn);
+      });
+
+      popup.appendChild(sentRow);
+
+      var dismissBtn2 = document.createElement("button");
+      dismissBtn2.className = "sm-review-dismiss";
+      dismissBtn2.style.cssText = "display:block;width:100%;margin-top:6px;";
+      dismissBtn2.textContent = "Skip";
+      dismissBtn2.addEventListener("click", onDismiss);
+      popup.appendChild(dismissBtn2);
+
+    } else {
+      // ── Version 3: Small persistent banner ────────────────────────────────
+      popup.className = "sm-review-popup sm-review-banner";
+      popup.style.position = "relative"; // override absolute for inline layout
+
+      var xBtn = document.createElement("button");
+      xBtn.className = "sm-review-banner-dismiss";
+      xBtn.textContent = "\u00D7"; // ×
+      xBtn.setAttribute("aria-label", "Dismiss");
+      xBtn.addEventListener("click", onDismiss);
+      popup.appendChild(xBtn);
+
+      var bannerText = document.createElement("p");
+      bannerText.style.cssText = "margin:0 20px 8px 0;color:#374151;";
+      bannerText.textContent = "Enjoying ShopMate? A quick review helps \u2B50";
+      popup.appendChild(bannerText);
+
+      var bannerBtn = document.createElement("button");
+      bannerBtn.className = "sm-review-yes";
+      bannerBtn.textContent = "Leave a Review";
+      bannerBtn.addEventListener("click", onReview);
+      popup.appendChild(bannerBtn);
+    }
+
+    // Anchor popup above the bubble
     widget.style.position = "relative";
     widget.appendChild(popup);
   }

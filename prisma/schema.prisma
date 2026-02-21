@@ -42,8 +42,14 @@ model ShopSettings {
   // Freemium usage (reset monthly)
   messageCount    Int       @default(0)
   lastReset       DateTime  @default(now())
-  // Review prompt
-  reviewPrompted  Boolean   @default(false)
+  // Review system
+  reviewPrompted  Boolean   @default(false)     // legacy — kept for compat
+  reviewRequestedAt   DateTime?                 // last time review modal was shown
+  reviewDismissedCount Int   @default(0)        // how many times merchant dismissed
+  hasReviewed     Boolean   @default(false)     // merchant clicked "Leave a review"
+  // Counters for smart triggers
+  aiHandledChats  Int       @default(0)         // chats fully handled by AI (no escalation)
+  orderTrackingResolved Int @default(0)         // order tracking queries answered
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 }
