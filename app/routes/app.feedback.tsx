@@ -16,39 +16,52 @@ import prisma from "~/db.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
-  const shop = session.shop;
-
-  const formData = await request.formData();
-  const message = (formData.get("message") as string | null)?.trim() ?? "";
-  const email   = (formData.get("email")   as string | null)?.trim() || null;
-
-  // Validate
-  if (!message) {
-    return Response.json({ ok: false, error: "Message is required." }, { status: 400 });
-  }
-  if (message.length > 5000) {
-    return Response.json({ ok: false, error: "Message is too long (max 5,000 characters)." }, { status: 400 });
-  }
-
   try {
+    const { session } = await authenticate.admin(request);
+    const shop = session.shop;
+    console.log(`[feedback] Starting feedback submission from shop: ${shop}`);
+
+    if (request.method !== "POST") {
+      return Response.json({ ok: false, error: "Method not allowed" }, { status: 405 });
+    }
+
+    const formData = await request.formData();
+    const message = (formData.get("message") as string | null)?.trim() ?? "";
+    const email = (formData.get("email") as string | null)?.trim() || null;
+
+    console.log(`[feedback] Message length: ${message.length}, Email: ${email ? "provided" : "empty"}`);
+
+    // Validate
+    if (!message) {
+      console.log("[feedback] Validation failed: no message");
+      return Response.json({ ok: false, error: "Message is required." }, { status: 400 });
+    }
+    if (message.length > 5000) {
+      console.log("[feedback] Validation failed: message too long");
+      return Response.json({ ok: false, error: "Message is too long (max 5,000 characters)." }, { status: 400 });
+    }
+
     // Fetch current plan from DB
     const settings = await prisma.shopSettings.findUnique({
       where: { shop },
       select: { plan: true },
     });
     const plan = settings?.plan ?? "free";
+    console.log(`[feedback] Plan: ${plan}`);
 
     // Save feedback to DB
-    await prisma.feedback.create({
+    const savedFeedback = await prisma.feedback.create({
       data: { shop, message, email, plan },
     });
 
-    console.log(`[feedback] Feedback saved from shop: ${shop}`);
+    console.log(`[feedback] ✅ Feedback saved successfully with ID: ${savedFeedback.id}`);
 
     return Response.json({ ok: true });
   } catch (err) {
-    console.error("[feedback] Failed to save feedback:", err);
+    console.error("[feedback] ❌ Error:", err instanceof Error ? err.message : String(err));
+    if (err instanceof Error) {
+      console.error("[feedback] Stack:", err.stack);
+    }
     return Response.json(
       { ok: false, error: "Failed to save feedback. Please try again." },
       { status: 500 }
@@ -63,3 +76,5 @@ export const loader = async () => {
 
 export const headers = (headersArgs: Parameters<typeof boundary.headers>[0]) =>
   boundary.headers(headersArgs);
+
+export const errorBoundary = boundary.error;

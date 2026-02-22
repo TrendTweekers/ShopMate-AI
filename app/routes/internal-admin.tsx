@@ -135,6 +135,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     },
   });
 
+  console.log(`[internal-admin] Loaded ${feedbackEntries.length} feedback entries`);
+
   const stores: StoreRow[] = allSettings.map((settings) => {
     const chatCount = chatCounts.find((c) => c.shop === settings.shop)?._count.id || 0;
     const daysInactive = calculateDaysInactive(settings.lastActiveAt);
