@@ -1,5 +1,5 @@
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useLoaderData, useNavigate, useRouteError } from "react-router";
+import { useFetcher, useLoaderData, useNavigate, useRouteError } from "react-router";
 import { useState, useEffect, useRef } from "react";
 import { MessageSquare, ShieldCheck, Clock, TrendingUp, Zap, DollarSign, MessageCircle } from "lucide-react";
 import KpiCard from "~/components/admin/KpiCard";
@@ -97,6 +97,56 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   return null;
+};
+
+// ─── Action ───────────────────────────────────────────────────────────────────
+
+export const action = async ({ request }: ActionFunctionArgs) => {
+  if (request.method !== "POST") {
+    return Response.json({ ok: false, error: "Method not allowed" }, { status: 405 });
+  }
+
+  const { session } = await authenticate.admin(request);
+  const shop = session.shop;
+  const formData = await request.formData();
+
+  const message = (formData.get("message") as string | null)?.trim() ?? "";
+  const email = (formData.get("email") as string | null)?.trim() || null;
+
+  console.log(`[app._index action] Feedback submission from ${shop}: message length=${message.length}, email=${email ? "provided" : "empty"}`);
+
+  // Validate
+  if (!message) {
+    console.log("[app._index action] Validation failed: no message");
+    return Response.json({ ok: false, error: "Message is required." }, { status: 400 });
+  }
+  if (message.length > 5000) {
+    console.log("[app._index action] Validation failed: message too long");
+    return Response.json({ ok: false, error: "Message is too long (max 5,000 characters)." }, { status: 400 });
+  }
+
+  try {
+    // Fetch current plan from DB
+    const settings = await prisma.shopSettings.findUnique({
+      where: { shop },
+      select: { plan: true },
+    });
+    const plan = settings?.plan ?? "free";
+
+    // Save feedback to DB
+    const savedFeedback = await prisma.feedback.create({
+      data: { shop, message, email, plan },
+    });
+
+    console.log(`[app._index action] ✅ Feedback saved with ID: ${savedFeedback.id}`);
+    return Response.json({ ok: true });
+  } catch (err) {
+    console.error("[app._index action] ❌ Error:", err instanceof Error ? err.message : String(err));
+    return Response.json(
+      { ok: false, error: "Failed to save feedback. Please try again." },
+      { status: 500 }
+    );
+  }
 };
 
 // ─── Loader ───────────────────────────────────────────────────────────────────
@@ -400,6 +450,7 @@ function ReviewBanner({
 // ─── FeedbackModal component ──────────────────────────────────────────────────
 
 function FeedbackModal({ onClose }: { onClose: () => void }) {
+  const fetcher = useFetcher<{ ok: boolean; error?: string }>();
   const [message, setMessage] = useState("");
   const [email, setEmail]     = useState("");
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -408,6 +459,19 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
   // Focus textarea when modal opens
   useEffect(() => { textareaRef.current?.focus(); }, []);
 
+  // Handle response from fetcher
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data) {
+      console.log("[feedback-modal] Fetcher response:", fetcher.data);
+      if (fetcher.data.ok) {
+        setToastMsg("✓ Feedback sent — thank you!");
+        setMessage("");
+        setEmail("");
+        setTimeout(onClose, 2000);
+      }
+    }
+  }, [fetcher.state, fetcher.data, onClose]);
+
   // Close on Escape key
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -415,70 +479,26 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [localError, setLocalError] = useState<string | null>(null);
+  const isSubmitting = fetcher.state !== "idle";
+  const serverError  = fetcher.data?.ok === false ? fetcher.data.error : null;
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     if (!message.trim()) {
       return;
     }
 
-    setIsSubmitting(true);
-    setLocalError(null);
-
-    try {
-      console.log("[feedback-modal] Submitting feedback via direct fetch...");
-      const formData = new FormData();
-      formData.append("message", message);
-      if (email.trim()) {
-        formData.append("email", email);
-      }
-
-      const feedbackUrl = "/app/feedback";
-      console.log("[feedback-modal] Posting to:", feedbackUrl);
-      console.log("[feedback-modal] FormData keys:", Array.from(formData.keys()));
-
-      const response = await fetch(feedbackUrl, {
-        method: "POST",
-        body: formData,
-      });
-
-      console.log("[feedback-modal] Response status:", response.status);
-      console.log("[feedback-modal] Response ok:", response.ok);
-
-      const responseText = await response.text();
-      console.log("[feedback-modal] Response text:", responseText);
-
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch {
-        console.error("[feedback-modal] Failed to parse JSON:", responseText);
-        setLocalError("Invalid response from server");
-        setIsSubmitting(false);
-        return;
-      }
-
-      console.log("[feedback-modal] Response data:", data);
-
-      if (data.ok) {
-        setToastMsg("✓ Feedback sent — thank you!");
-        setMessage("");
-        setEmail("");
-        setTimeout(onClose, 2000);
-      } else {
-        setLocalError(data.error || "Failed to save feedback");
-      }
-    } catch (error) {
-      console.error("[feedback-modal] Fetch error:", error);
-      console.error("[feedback-modal] Error message:", error instanceof Error ? error.message : String(error));
-      console.error("[feedback-modal] Error stack:", error instanceof Error ? error.stack : "No stack");
-      setLocalError("Network error - please try again");
-    } finally {
-      setIsSubmitting(false);
+    console.log("[feedback-modal] Submitting feedback via fetcher (no action prop)...");
+    const formData = new FormData();
+    formData.append("message", message);
+    if (email.trim()) {
+      formData.append("email", email);
     }
+
+    // Submit to current route's action (app._index action)
+    // This should work in embedded context since it doesn't specify an action prop
+    fetcher.submit(formData, { method: "post" });
   };
 
   return (
@@ -666,7 +686,7 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
           </div>
 
           {/* Error message */}
-          {localError && (
+          {serverError && (
             <div style={{
               margin: 0,
               fontSize: 14,
@@ -680,7 +700,7 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
               gap: 8,
             }}>
               <span style={{ fontSize: 16 }}>⚠</span>
-              <span>{localError}</span>
+              <span>{serverError}</span>
             </div>
           )}
 
