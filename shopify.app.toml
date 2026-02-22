@@ -19,19 +19,6 @@ api_version = "2026-01"
   topics = [ "app/uninstalled" ]
   uri = "/webhooks/app/uninstalled"
 
-  # GDPR / privacy-law mandatory compliance webhooks
-  [[webhooks.subscriptions]]
-  topics = [ "customers/data_request" ]
-  uri = "/webhooks/customers/data_request"
-
-  [[webhooks.subscriptions]]
-  topics = [ "customers/redact" ]
-  uri = "/webhooks/customers/redact"
-
-  [[webhooks.subscriptions]]
-  topics = [ "shop/redact" ]
-  uri = "/webhooks/shop/redact"
-
   # orders/create requires Shopify Protected Customer Data approval.
   # The route webhooks.orders.create.tsx is in place and ready — uncomment
   # once PCD approval is granted from the Partners Dashboard.
@@ -65,3 +52,11 @@ redirect_urls = [
 url = "https://shopmate-ai-helper-production.up.railway.app/apps/shopmate"
 prefix = "apps"
 subpath = "shopmate"
+
+# GDPR / privacy-law mandatory compliance endpoints.
+# Shopify calls these when a customer or merchant requests data export/deletion.
+# The route handlers use authenticate.webhook() for HMAC verification.
+[privacy_compliance]
+customer_data_request_url = "/webhooks/customers/data_request"
+customer_deletion_url = "/webhooks/customers/redact"
+shop_deletion_url = "/webhooks/shop/redact"
