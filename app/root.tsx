@@ -20,6 +20,15 @@ export default function App() {
         />
         <Meta />
         <Links />
+        {/*
+          App Bridge CDN script — loaded explicitly so Shopify's automated
+          review checker ("Using the latest App Bridge script loaded from
+          Shopify's CDN") can detect it in the HTML.
+          The @shopify/shopify-app-react-router AppProvider also injects this
+          at runtime, but the explicit tag ensures it is present in the
+          server-rendered HTML that the checker crawls.
+        */}
+        <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js" />
       </head>
       <body>
         <Outlet />
@@ -35,6 +44,7 @@ export function ErrorBoundary() {
     <html>
       <head>
         <title>Error</title>
+        <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js" />
       </head>
       <body>
         <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
