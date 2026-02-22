@@ -7,6 +7,7 @@ import {
 } from "@shopify/shopify-app-react-router/server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import prisma from "./db.server";
+import { importStorePolicies } from "./lib/importStorePolicies.server";
 
 export const MONTHLY_PLAN = "ShopMate Pro";
 
@@ -28,6 +29,20 @@ const shopify = shopifyApp({
   },
   future: {
     expiringOfflineAccessTokens: true,
+  },
+  // ── Auto-import store policies on every new install/re-auth ──────────────
+  // afterAuth fires once per OAuth flow completion (new install + reinstalls).
+  // We import asynchronously so auth completes instantly — failures are logged
+  // but never block the merchant from reaching the dashboard.
+  hooks: {
+    afterAuth: async ({ admin, session }) => {
+      if (!admin) return;
+      const shop = session.shop;
+      console.log(`[afterAuth] Running policy import for newly authenticated shop: ${shop}`);
+      importStorePolicies(shop, admin).catch((err) => {
+        console.error(`[afterAuth] Policy import failed for ${shop}:`, err);
+      });
+    },
   },
   ...(process.env.SHOP_CUSTOM_DOMAIN
     ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }

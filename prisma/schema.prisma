@@ -54,6 +54,23 @@ model ShopSettings {
   updatedAt       DateTime  @updatedAt
 }
 
+// Knowledge Base entries — store policies fetched from Shopify on install,
+// plus any custom FAQs the merchant adds manually.
+model KnowledgeBase {
+  id        String   @id @default(cuid())
+  shop      String
+  title     String                         // "Return Policy", "Shipping Policy", etc.
+  content   String                         // full policy text (can be long)
+  type      String   @default("custom")    // "refund_policy" | "shipping_policy" | "privacy_policy" | "terms_of_service" | "custom"
+  status    String   @default("active")    // "active" | "draft"
+  source    String   @default("manual")    // "shopify_import" | "manual"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([shop])
+  @@unique([shop, type])                   // one row per policy type per shop
+}
+
 model Session {
   id            String    @id
   shop          String

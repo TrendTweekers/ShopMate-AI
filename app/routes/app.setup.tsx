@@ -1,18 +1,28 @@
 import { useState, useEffect } from "react";
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useFetcher, useNavigate } from "react-router";
-import { Check, ArrowRight, ArrowLeft, Bot, Package, Sparkles, BookOpen, Zap } from "lucide-react";
+import { useFetcher, useLoaderData, useNavigate } from "react-router";
+import { Check, ArrowRight, ArrowLeft, Bot, Package, Sparkles, BookOpen, Zap, AlertCircle } from "lucide-react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Switch } from "~/components/ui/switch";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import prisma from "~/db.server";
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
-  return null;
+  const { session } = await authenticate.admin(request);
+  const shop = session.shop;
+
+  // Fetch active KB entries so step 3 of the wizard shows what was imported
+  const kbEntries = await prisma.knowledgeBase.findMany({
+    where: { shop, status: "active" },
+    select: { title: true, type: true, source: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  return { kbEntries };
 };
 
 // ─── Action ──────────────────────────────────────────────────────────────────
@@ -37,6 +47,7 @@ const steps = [
 
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function SetupWizard() {
+  const { kbEntries } = useLoaderData<typeof loader>();
   const [currentStep, setCurrentStep] = useState(0);
   const fetcher = useFetcher<{ ok: boolean }>();
   const shopify = useAppBridge();
@@ -172,21 +183,54 @@ export default function SetupWizard() {
 
         {currentStep === 3 && (
           <div className="space-y-4">
-            <h4 className="text-sm font-semibold text-foreground">Policies</h4>
-            <div className="space-y-3">
-              {["Return Policy", "Shipping Policy", "Size Guide"].map((policy) => (
-                <div
-                  key={policy}
-                  className="flex items-center justify-between p-3 border border-border rounded-lg"
-                >
-                  <div className="flex items-center gap-2">
-                    <BookOpen className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm text-foreground">{policy}</span>
-                  </div>
-                  <span className="polaris-badge polaris-badge-success">Configured</span>
+            <h4 className="text-sm font-semibold text-foreground">Knowledge Base</h4>
+
+            {kbEntries.length > 0 ? (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  ✓ {kbEntries.length} polic{kbEntries.length === 1 ? "y was" : "ies were"} automatically imported from your Shopify store.
+                  The AI will use these to answer customer questions.
+                </p>
+                <div className="space-y-2">
+                  {kbEntries.map((entry) => (
+                    <div
+                      key={entry.type}
+                      className="flex items-center justify-between p-3 border border-border rounded-lg"
+                    >
+                      <div className="flex items-center gap-2">
+                        <BookOpen className="w-4 h-4 text-muted-foreground" />
+                        <span className="text-sm text-foreground">{entry.title}</span>
+                      </div>
+                      <span className="polaris-badge polaris-badge-success">
+                        {entry.source === "shopify_import" ? "Auto-imported" : "Manual"}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+                <p className="text-xs text-muted-foreground">
+                  You can edit or add more entries in the Knowledge Base page.
+                </p>
+              </>
+            ) : (
+              <div
+                style={{
+                  display: "flex", alignItems: "flex-start", gap: 10,
+                  padding: "12px 14px", borderRadius: 8,
+                  background: "#fff7ed", border: "1px solid #f97316",
+                }}
+              >
+                <AlertCircle size={16} color="#c2410c" style={{ flexShrink: 0, marginTop: 1 }} />
+                <div>
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#c2410c" }}>
+                    No policies found
+                  </p>
+                  <p style={{ margin: "4px 0 0", fontSize: 12, color: "#92400e" }}>
+                    We couldn't find store policies to import. Add them in{" "}
+                    <strong>Shopify Admin → Settings → Policies</strong>, then visit the Knowledge Base page to import them.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

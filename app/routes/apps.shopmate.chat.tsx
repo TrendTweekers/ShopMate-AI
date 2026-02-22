@@ -363,10 +363,25 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     content: m.content,
   }));
 
+  // ── Fetch active Knowledge Base entries for this shop ─────────────────────
+  // Only load active entries; draft entries are explicitly excluded.
+  const kbEntries = await prisma.knowledgeBase.findMany({
+    where: { shop, status: "active" },
+    select: { title: true, content: true },
+    orderBy: { updatedAt: "desc" },
+    take: 20, // cap to avoid token bloat on very large KBs
+  });
+
+  const kbContext = kbEntries.length > 0
+    ? "\nSTORE KNOWLEDGE BASE:\n" +
+      kbEntries.map((e) => `### ${e.title}\n${e.content}`).join("\n\n")
+    : "";
+
   // ── System prompt ─────────────────────────────────────────────────────────
   const systemPrompt = [
     `You are ShopMate, a helpful AI assistant for the Shopify store ${shop}. Help customers with order tracking, product recommendations, returns, and general questions. Be friendly, concise, and helpful.`,
-    extraContext ? `\nCONTEXT:\n${extraContext}` : "",
+    kbContext,
+    extraContext ? `\nLIVE ORDER/PRODUCT CONTEXT:\n${extraContext}` : "",
     products.length > 0 ? "\nPresent product cards after your reply. Briefly introduce them." : "",
   ]
     .filter(Boolean)
