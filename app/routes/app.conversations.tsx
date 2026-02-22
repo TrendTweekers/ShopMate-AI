@@ -1,28 +1,29 @@
 import { useState } from "react";
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useLoaderData } from "react-router";
-import { Search, Filter, MessageSquare } from "lucide-react";
+import { Search, Filter, MessageSquare, ArrowLeft } from "lucide-react";
 import { Input } from "~/components/ui/input";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import prisma from "~/db.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
+  const url = new URL(request.url);
+  const preselectedId = url.searchParams.get("id") ?? null;
+
   const conversations = await prisma.conversation.findMany({
     where: { shop: session.shop },
     include: { messages: { orderBy: { createdAt: "asc" } } },
     orderBy: { updatedAt: "desc" },
     take: 50,
   });
-  return { conversations };
+  return { conversations, preselectedId };
 };
 
 export default function ConversationsPage() {
-  const { conversations } = useLoaderData<typeof loader>();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const { conversations, preselectedId } = useLoaderData<typeof loader>();
+  const [selectedId, setSelectedId] = useState<string | null>(preselectedId);
   const selectedConv = conversations.find((c) => c.id === selectedId);
 
   const formatTime = (date: Date | string) => {
@@ -113,13 +114,30 @@ export default function ConversationsPage() {
           {selectedConv ? (
             <div className="space-y-4 animate-fade-in">
               <div className="flex items-center justify-between border-b border-border pb-3">
-                <div>
-                  <h3 className="text-base font-semibold text-foreground font-mono">
-                    {selectedConv.id}
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    {selectedConv.shop} · {selectedConv.messages.length} messages
-                  </p>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <button
+                    onClick={() => setSelectedId(null)}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      color: "hsl(208 5% 45%)",
+                      display: "flex",
+                      alignItems: "center",
+                      padding: 0,
+                    }}
+                    title="Back to list"
+                  >
+                    <ArrowLeft size={16} />
+                  </button>
+                  <div>
+                    <h3 className="text-base font-semibold text-foreground font-mono">
+                      {selectedConv.id.slice(0, 16)}…
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      Started {formatTime(selectedConv.createdAt)} · {selectedConv.messages.length} messages
+                    </p>
+                  </div>
                 </div>
                 <span className="polaris-badge polaris-badge-info">
                   {selectedConv.messages.length > 0 ? "active" : "empty"}

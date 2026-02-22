@@ -12,7 +12,7 @@
  * Called by chat-widget.js running in the Theme App Extension.
  */
 import type { ActionFunctionArgs } from "react-router";
-import { authenticate } from "~/shopify.server";
+import { authenticate, unauthenticated } from "~/shopify.server";
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import Anthropic from "@anthropic-ai/sdk";
 import prisma from "~/db.server";
@@ -32,29 +32,31 @@ function extractOrderNumber(text: string): string | null {
 
 function isOrderTrackingIntent(text: string): boolean {
   const lower = text.toLowerCase();
+  // Direct order number reference (e.g. #5050) always triggers tracking
+  if (/#\d{3,}/.test(text)) return true;
+  // "track my order", "where is my order", "order status", etc.
   return (
     /\border\b/.test(lower) &&
-    (/track|status|where|shipped|delivery|arrive|package|shipment/.test(lower) ||
-      /#\d{3,}/.test(text))
+    /track|status|where|shipped|delivery|arrive|package|shipment|dispatch/.test(lower)
   );
 }
 
 function isProductRecommendationIntent(text: string): boolean {
-  return /recommend|suggest|show me|looking for|find me|what.*product|product.*recommend|popular|best seller/.test(
-    text.toLowerCase(),
-  );
+  const lower = text.toLowerCase();
+  return /recommend|suggest|show me|looking for|find me|what.*product|product.*recommend|popular|best seller|what do you (sell|have|carry|offer)|do you (have|sell|carry|offer)|your products|browse|catalog|collection/.test(lower);
 }
 
 function extractProductQuery(text: string): string {
   const stripped = text
     .toLowerCase()
     .replace(
-      /recommend|suggest|show me|looking for|find me|what.*products?|best seller[s]?|popular/g,
+      /recommend|suggest|show me|looking for|find me|what.*products?|best seller[s]?|popular|what do you (sell|have|carry|offer)|do you (have|sell|carry|offer)|your products|browse|catalog|collection/g,
       "",
     )
     .replace(/\?|please|can you|could you|i.*want|i.*need/g, "")
     .trim();
-  return stripped || "popular products";
+  // If we stripped everything meaningful, fetch popular products as a general catalog response
+  return stripped || "status:active";
 }
 
 // ─── Escalation detection (used only for counter logic) ───────────────────────
@@ -262,6 +264,21 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   if (!shop) {
     return Response.json({ error: "Could not determine shop" }, { status: 400, headers: CORS });
+  }
+
+  // ── Fallback: get admin context from stored offline token if proxy didn't provide one ──
+  // authenticate.public.appProxy returns adminCtx only when an offline session exists in DB.
+  // unauthenticated.admin uses the stored offline access token directly, which is always
+  // available after the merchant installs the app.
+  if (!adminCtx) {
+    try {
+      const fallback = await unauthenticated.admin(shop);
+      adminCtx = fallback.admin;
+      console.log("[appProxy] ✓ Fallback admin context obtained for shop:", shop);
+    } catch (fallbackErr) {
+      console.warn("[appProxy] Could not get fallback admin context:", fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr));
+      // adminCtx stays undefined — order/product lookups will be skipped
+    }
   }
 
   // ── Parse body ────────────────────────────────────────────────────────────

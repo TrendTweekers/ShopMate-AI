@@ -19,18 +19,11 @@ api_version = "2026-01"
   topics = [ "app/uninstalled" ]
   uri = "/webhooks/app/uninstalled"
 
-  # GDPR / privacy-law mandatory compliance webhooks
+  # GDPR / privacy-law mandatory compliance webhooks.
+  # These use compliance_topics (not topics) and a single uri for all three.
   [[webhooks.subscriptions]]
-  topics = [ "customers/data_request" ]
-  uri = "/webhooks/customers/data_request"
-
-  [[webhooks.subscriptions]]
-  topics = [ "customers/redact" ]
-  uri = "/webhooks/customers/redact"
-
-  [[webhooks.subscriptions]]
-  topics = [ "shop/redact" ]
-  uri = "/webhooks/shop/redact"
+  compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
+  uri = "/webhooks/compliance"
 
   # orders/create requires Shopify Protected Customer Data approval.
   # The route webhooks.orders.create.tsx is in place and ready — uncomment
