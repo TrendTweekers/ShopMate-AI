@@ -1,5 +1,5 @@
 import type { LoaderFunctionArgs } from "react-router";
-import { Outlet, useLoaderData, useRouteError } from "react-router";
+import { Outlet, useLoaderData } from "react-router";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { NavMenu } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -42,26 +42,16 @@ export default function AppLayout() {
 export const headers = (headersArgs: Parameters<typeof boundary.headers>[0]) =>
   boundary.headers(headersArgs);
 
-/**
- * Route-level ErrorBoundary for all /app/* routes.
- *
- * Uses boundary.error() from the Shopify SDK — it handles the case where
- * authenticate.admin() throws a redirect Response (e.g. to /auth on first
- * load). boundary.error() correctly re-issues the redirect inside the
- * embedded iframe context so App Bridge picks it up and navigates the top
- * frame to the Shopify OAuth flow instead of just showing an error page.
- *
- * Without this, the first-load "Something went wrong, works on refresh"
- * symptom occurs because:
- *   1. First load: no session token yet → authenticate.admin() throws a
- *      redirect Response to /auth
- *   2. Root ErrorBoundary catches it → shows error page
- *   3. Refresh: Shopify injects the token into the URL → auth succeeds
- *
- * boundary.error() handles the redirect correctly so step 2 becomes a
- * transparent redirect to OAuth instead of an error page.
- */
-export function ErrorBoundary() {
-  const error = useRouteError();
-  return boundary.error(error);
-}
+// NOTE: No ErrorBoundary on this layout route intentionally.
+//
+// boundary.error() in a LAYOUT route (app.tsx) replaces the entire
+// AppProvider + NavMenu tree when triggered — App Bridge then sees the
+// NavMenu disappear and permanently clears the sidebar nav in Shopify Admin.
+//
+// Auth redirects (authenticate.admin throwing a Response on first load) are
+// handled by:
+//   1. root.tsx ErrorBoundary: re-throws Response objects so React Router
+//      handles the redirect natively (isRouteErrorResponse guard).
+//   2. Child route ErrorBoundaries (app._index.tsx, app.billing.tsx, etc.)
+//      each export boundary.error() — they handle the redirect via App Bridge
+//      postMessage without touching the layout or NavMenu.
