@@ -9,6 +9,7 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { useLoaderData, useRevalidator } from "react-router";
 import { authenticate } from "~/shopify.server";
+import prisma from "~/db.server";
 
 // ─── GraphQL ──────────────────────────────────────────────────────────────────
 
@@ -79,6 +80,13 @@ interface TestResult<T> {
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
   const shop = session.shop;
+
+  // ── Update last active timestamp ──
+  await prisma.shopSettings.upsert({
+    where: { shop },
+    create: { shop, lastActiveAt: new Date() },
+    update: { lastActiveAt: new Date() },
+  });
 
   // ── Products test ──────────────────────────────────────────────────────────
   const productsResult: TestResult<ProductNode> = await (async () => {

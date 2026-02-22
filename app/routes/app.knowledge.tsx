@@ -36,6 +36,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
 
+  // ── Update last active timestamp ──
+  await prisma.shopSettings.upsert({
+    where: { shop },
+    create: { shop, lastActiveAt: new Date() },
+    update: { lastActiveAt: new Date() },
+  });
+
   const entries = await prisma.knowledgeBase.findMany({
     where: { shop },
     orderBy: { updatedAt: "desc" },

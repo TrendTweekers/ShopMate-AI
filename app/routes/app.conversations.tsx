@@ -12,6 +12,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
   const preselectedId = url.searchParams.get("id") ?? null;
 
+  // ── Update last active timestamp ──
+  await prisma.shopSettings.upsert({
+    where: { shop: session.shop },
+    create: { shop: session.shop, lastActiveAt: new Date() },
+    update: { lastActiveAt: new Date() },
+  });
+
   const conversations = await prisma.conversation.findMany({
     where: { shop: session.shop },
     include: { messages: { orderBy: { createdAt: "asc" } } },

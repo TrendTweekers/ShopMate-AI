@@ -15,6 +15,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
 
+  // ── Update last active timestamp ──
+  await prisma.shopSettings.upsert({
+    where: { shop },
+    create: { shop, lastActiveAt: new Date() },
+    update: { lastActiveAt: new Date() },
+  });
+
   // Fetch active KB entries so step 3 of the wizard shows what was imported
   const kbEntries = await prisma.knowledgeBase.findMany({
     where: { shop, status: "active" },

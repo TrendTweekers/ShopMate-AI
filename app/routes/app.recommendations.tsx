@@ -6,9 +6,18 @@ import { Button } from "~/components/ui/button";
 import { Sparkles, TrendingUp, Shuffle, Clock } from "lucide-react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import prisma from "~/db.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
+
+  // ── Update last active timestamp ──
+  await prisma.shopSettings.upsert({
+    where: { shop: session.shop },
+    create: { shop: session.shop, lastActiveAt: new Date() },
+    update: { lastActiveAt: new Date() },
+  });
+
   return null;
 };
 

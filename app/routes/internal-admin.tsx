@@ -63,8 +63,18 @@ function calculateDaysInactive(lastActiveAt: Date | null): number {
 }
 
 function calculateAutoHealthScore(daysInactive: number, totalChats: number): "green" | "yellow" | "red" {
-  // Red: inactive for >7 days OR never had any chats
-  if (daysInactive > 7 || (daysInactive === 999 && totalChats === 0)) {
+  // If lastActiveAt is null (999 days) but store has chats, treat as green/yellow based on activity
+  if (daysInactive === 999) {
+    // Has chats but never logged in — fallback to yellow (setup in progress or merchant using widget)
+    if (totalChats > 0) {
+      return "yellow";
+    }
+    // No activity at all — red
+    return "red";
+  }
+
+  // Red: inactive for >7 days
+  if (daysInactive > 7) {
     return "red";
   }
 

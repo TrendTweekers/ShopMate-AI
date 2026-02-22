@@ -13,11 +13,20 @@ import { useState } from "react";
 import { Palette, Copy, Check, ExternalLink, MessageSquare } from "lucide-react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import prisma from "~/db.server";
 
 // ─── Loader ───────────────────────────────────────────────────────────────────
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
+
+  // ── Update last active timestamp ──
+  await prisma.shopSettings.upsert({
+    where: { shop: session.shop },
+    create: { shop: session.shop, lastActiveAt: new Date() },
+    update: { lastActiveAt: new Date() },
+  });
+
   return { shop: session.shop };
 };
 

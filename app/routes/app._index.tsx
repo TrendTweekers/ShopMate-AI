@@ -111,12 +111,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     isTest: process.env.NODE_ENV !== "production",
   });
 
-  // ── Sync plan to DB ──
+  // ── Sync plan to DB & update activity tracking ──
   const newPlan = hasActivePayment ? "pro" : "free";
   const settings = await prisma.shopSettings.upsert({
     where: { shop },
-    create: { shop, plan: newPlan },
-    update: { plan: newPlan },
+    create: { shop, plan: newPlan, lastActiveAt: new Date() },
+    update: { plan: newPlan, lastActiveAt: new Date() },
   });
 
   // ── KPI totals ──

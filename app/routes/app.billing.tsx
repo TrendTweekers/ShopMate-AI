@@ -17,9 +17,17 @@ import type { LoaderFunctionArgs } from "react-router";
 import { redirect, useRouteError } from "react-router";
 import { authenticate, MONTHLY_PLAN } from "~/shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import prisma from "~/db.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { billing } = await authenticate.admin(request);
+  const { session, billing } = await authenticate.admin(request);
+
+  // ── Update last active timestamp ──
+  await prisma.shopSettings.upsert({
+    where: { shop: session.shop },
+    create: { shop: session.shop, lastActiveAt: new Date() },
+    update: { lastActiveAt: new Date() },
+  });
 
   const { hasActivePayment } = await billing.check({
     plans: [MONTHLY_PLAN],
