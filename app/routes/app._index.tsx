@@ -75,6 +75,8 @@ function getReviewTrigger(
 // ─── Action ───────────────────────────────────────────────────────────────────
 
 export const action = async ({ request }: ActionFunctionArgs) => {
+  console.log("[app._index action] REQUEST RECEIVED!", { method: request.method, url: request.url });
+
   if (request.method !== "POST") {
     return Response.json({ ok: false, error: "Method not allowed" }, { status: 405 });
   }
@@ -83,6 +85,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const shop = session.shop;
   const formData = await request.formData();
   const intent = (formData.get("intent") as string | null)?.trim();
+
+  console.log("[app._index action] Received intent:", intent, "shop:", shop);
 
   // ─── Handle Review Banner intents ──
   if (intent === "review_completed" || intent === "review_dismissed") {
@@ -457,8 +461,9 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
 
   // Handle response from fetcher
   useEffect(() => {
+    console.log("[feedback-modal] Fetcher state changed:", fetcher.state, "data:", fetcher.data);
     if (fetcher.state === "idle" && fetcher.data) {
-      console.log("[feedback-modal] Fetcher response:", fetcher.data);
+      console.log("[feedback-modal] Fetcher response received:", fetcher.data);
       if (fetcher.data.ok) {
         setToastMsg("✓ Feedback sent — thank you!");
         setMessage("");
