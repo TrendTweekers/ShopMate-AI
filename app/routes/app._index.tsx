@@ -109,7 +109,30 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
   const formData = await request.formData();
+  const intent = (formData.get("intent") as string | null)?.trim();
 
+  // ─── Handle Review Banner intents ──
+  if (intent === "review_completed" || intent === "review_dismissed") {
+    console.log(`[app._index action] Review intent: ${intent} from ${shop}`);
+    try {
+      await prisma.shopSettings.update({
+        where: { shop },
+        data: {
+          hasReviewed: intent === "review_completed",
+          reviewDismissedCount: intent === "review_dismissed"
+            ? { increment: 1 }
+            : undefined,
+        },
+      });
+      console.log(`[app._index action] ✅ Review intent processed`);
+      return Response.json({ ok: true });
+    } catch (err) {
+      console.error("[app._index action] ❌ Review error:", err instanceof Error ? err.message : String(err));
+      return Response.json({ ok: false }, { status: 500 });
+    }
+  }
+
+  // ─── Handle Feedback submission ──
   const message = (formData.get("message") as string | null)?.trim() ?? "";
   const email = (formData.get("email") as string | null)?.trim() || null;
 
