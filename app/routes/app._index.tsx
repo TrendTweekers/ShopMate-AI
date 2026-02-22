@@ -420,6 +420,24 @@ export default function Dashboard() {
   const navigate = useNavigate();
 
   const isPro = plan === "pro";
+
+  // Navigate to /app/billing using a full-page navigation that preserves
+  // Shopify's ?host= and other query params from the current URL.
+  //
+  // WHY NOT navigate("/app/billing"):
+  //   React Router's navigate() triggers a client-side data fetch to
+  //   /app/billing.data. That fetch carries no session token, so
+  //   authenticate.admin() gets shop:null and returns 401.
+  //
+  // WHY window.location.href with preserved params:
+  //   A full page load re-sends all the Shopify URL params (?host=, ?shop=,
+  //   etc.) that authenticate.admin() needs to verify the session token.
+  function goToBilling() {
+    const current = new URL(window.location.href);
+    current.pathname = "/app/billing";
+    window.location.href = current.toString();
+  }
+
   const usagePct = isPro ? 100 : Math.min(100, Math.round((messageCount / freeLimit) * 100));
   const usageColor = usagePct >= 90 ? "#b91c1c" : usagePct >= 70 ? "#d97706" : "#008060";
 
@@ -476,7 +494,7 @@ export default function Dashboard() {
 
         {!isPro && (
           <button
-            onClick={() => navigate("/app/billing")}
+            onClick={goToBilling}
             style={{
               padding: "6px 14px",
               borderRadius: 8,
