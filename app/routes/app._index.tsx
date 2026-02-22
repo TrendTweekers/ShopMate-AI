@@ -411,9 +411,12 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
 
   // After successful submit: show toast and close modal
   useEffect(() => {
+    console.log("[feedback-modal] Fetcher state:", { state: fetcher.state, data: fetcher.data });
     if (fetcher.state === "idle" && fetcher.data?.ok) {
       setToastMsg("✓ Feedback sent — thank you!");
       setTimeout(onClose, 2000);
+    } else if (fetcher.state === "idle" && fetcher.data?.ok === false) {
+      console.log("[feedback-modal] Feedback submission failed:", fetcher.data.error);
     }
   }, [fetcher.state, fetcher.data, onClose]);
 
@@ -430,9 +433,11 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!message.trim()) return;
+    console.log("[feedback-modal] Submitting feedback:", { messageLen: message.length, hasEmail: !!email.trim() });
     const fd = new FormData();
     fd.append("message", message.trim());
     if (email.trim()) fd.append("email", email.trim());
+    console.log("[feedback-modal] Sending to /app/feedback");
     fetcher.submit(fd, { method: "post", action: "/app/feedback" });
   }
 

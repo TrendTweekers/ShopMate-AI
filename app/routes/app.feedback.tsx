@@ -78,3 +78,8 @@ export const headers = (headersArgs: Parameters<typeof boundary.headers>[0]) =>
   boundary.headers(headersArgs);
 
 export const errorBoundary = boundary.error;
+
+// Dummy component — this route is action-only (POST to /app/feedback)
+export default function FeedbackAction() {
+  return null;
+}
