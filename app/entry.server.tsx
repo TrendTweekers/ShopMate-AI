@@ -15,6 +15,18 @@ export default async function handleRequest(
   reactRouterContext: EntryContext
 ) {
   addDocumentResponseHeaders(request, responseHeaders);
+
+  // ─── Override X-Frame-Options for Shopify embedded iframe context ─────────
+  // Cloudflare defaults to X-Frame-Options: SAMEORIGIN which blocks iframe loading
+  // in admin.shopify.com. We need to explicitly allow framing for Shopify origins.
+  responseHeaders.set("X-Frame-Options", "ALLOWALL");
+
+  // Set CSP to allow Shopify iframe origins
+  responseHeaders.set(
+    "Content-Security-Policy",
+    "frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com https://*.shopify.com https://shopify.app"
+  );
+
   const userAgent = request.headers.get("user-agent");
   const callbackName = isbot(userAgent ?? '')
     ? "onAllReady"
