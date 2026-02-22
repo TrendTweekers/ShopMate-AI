@@ -13,6 +13,8 @@ import {
   Clock,
   DollarSign,
   Activity,
+  Menu,
+  X,
 } from "lucide-react";
 import React from "react";
 
@@ -77,14 +79,12 @@ function calculateAutoHealthScore(daysInactive: number, totalChats: number): "gr
 
 function calculateDeflectionPercent(chats: number): number {
   if (chats === 0) return 0;
-  // Base deflection: chats that handled customer inquiries without escalation
-  return Math.min(100, Math.round((chats * 0.7) * 10)); // Rough estimate
+  return Math.min(100, Math.round((chats * 0.7) * 10));
 }
 
 // ─── Loader ───────────────────────────────────────────────────────────────
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  // Password protection
   const url = new URL(request.url);
   const password = url.searchParams.get("password");
   const adminPassword = process.env.ADMIN_PASSWORD;
@@ -93,7 +93,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     throw new Response("Unauthorized", { status: 404 });
   }
 
-  // Fetch all shops with stats
   const allSettings = await prisma.shopSettings.findMany({
     select: {
       id: true,
@@ -109,13 +108,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     },
   });
 
-  // Get chat counts per shop
   const chatCounts = await prisma.conversation.groupBy({
     by: ["shop"],
     _count: { id: true },
   });
 
-  // Fetch feedback entries
   const feedbackEntries = await prisma.feedback.findMany({
     orderBy: { createdAt: "desc" },
     select: {
@@ -127,7 +124,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     },
   });
 
-  // Build store rows with auto-calculated health
   const stores: StoreRow[] = allSettings.map((settings) => {
     const chatCount = chatCounts.find((c) => c.shop === settings.shop)?._count.id || 0;
     const daysInactive = calculateDaysInactive(settings.lastActiveAt);
@@ -151,7 +147,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     };
   });
 
-  // Calculate global stats
   const totalChats = stores.reduce((sum, s) => sum + s.totalChats, 0);
   const globalStats: GlobalStats = {
     totalStores: stores.length,
@@ -176,14 +171,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     totalChats,
   };
 
-  // Map feedback with replied status (for now, assume not replied)
   const feedback: FeedbackEntry[] = feedbackEntries.map((f) => ({
     id: f.id,
     shop: f.shop,
     message: f.message,
     email: f.email,
     createdAt: f.createdAt.toISOString(),
-    replied: false, // TODO: track replied status in DB
+    replied: false,
   }));
 
   return { stores, globalStats, feedback };
@@ -192,7 +186,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 // ─── Action ───────────────────────────────────────────────────────────────
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  // Password check
   const url = new URL(request.url);
   const password = url.searchParams.get("password");
   const adminPassword = process.env.ADMIN_PASSWORD;
@@ -285,6 +278,7 @@ export default function InternalAdminDashboard() {
     "activity",
   );
   const [activeTab, setActiveTab] = useState<"stores" | "feedback">("stores");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const filteredStores = stores
     .filter((s) => s.shop.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -301,242 +295,152 @@ export default function InternalAdminDashboard() {
     });
 
   return (
-    <div className="min-h-screen bg-slate-900">
+    <div className="min-h-screen bg-slate-900 flex flex-col">
       {/* Header */}
-      <div className="bg-gradient-to-r from-slate-800 to-slate-900 border-b border-slate-700 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-6">
+      <div className="bg-gradient-to-r from-slate-800 to-slate-900 border-b border-slate-700 sticky top-0 z-20">
+        <div className="px-4 sm:px-6 py-4">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-white">ShopMate Admin</h1>
-              <p className="text-slate-400 text-sm mt-1">Beta Program Management</p>
+            <div className="flex-1 min-w-0">
+              <h1 className="text-2xl sm:text-3xl font-bold text-white truncate">ShopMate Admin</h1>
+              <p className="text-slate-400 text-xs sm:text-sm mt-0.5">Beta Program</p>
             </div>
-            <div className="text-right">
-              <div className="text-slate-400 text-xs">Store Metrics</div>
-              <div className="text-white font-semibold">{globalStats.totalStores} Active</div>
+            <div className="text-right ml-4">
+              <div className="text-slate-400 text-xs">Stores</div>
+              <div className="text-white font-semibold text-lg">{globalStats.totalStores}</div>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-6 py-8">
-        {/* Global Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
-          <StatCard
-            label="Total Stores"
-            value={globalStats.totalStores}
-            icon={<Activity className="w-5 h-5" />}
-            trend={null}
-          />
-          <StatCard
-            label="Pro Plans"
-            value={globalStats.activePlans["pro"] || 0}
-            icon={<TrendingUp className="w-5 h-5 text-blue-400" />}
-            trend={null}
-          />
-          <StatCard
-            label="Total Chats"
-            value={globalStats.totalChats}
-            icon={<MessageSquare className="w-5 h-5 text-green-400" />}
-            trend={null}
-          />
-          <StatCard
-            label="At Risk"
-            value={globalStats.storesAtRisk}
-            icon={<AlertCircle className="w-5 h-5 text-red-400" />}
-            trend={`${Math.round((globalStats.storesAtRisk / globalStats.totalStores) * 100)}%`}
-          />
-          <StatCard
-            label="Avg Revenue"
-            value={`$${globalStats.avgRevenuePerStore.toFixed(0)}`}
-            icon={<DollarSign className="w-5 h-5 text-green-400" />}
-            trend={null}
-          />
-          <StatCard
-            label="Monthly MRR"
-            value={`$${Math.round(globalStats.totalMrr)}`}
-            icon={<TrendingUp className="w-5 h-5 text-purple-400" />}
-            trend={null}
-          />
-        </div>
-
-        {/* Tabs */}
-        <div className="mb-6 border-b border-slate-700">
-          <div className="flex gap-6">
-            <button
-              onClick={() => setActiveTab("stores")}
-              className={`px-4 py-3 font-medium border-b-2 transition ${
-                activeTab === "stores"
-                  ? "border-blue-500 text-white"
-                  : "border-transparent text-slate-400 hover:text-slate-300"
-              }`}
-            >
-              Stores ({globalStats.totalStores})
-            </button>
-            <button
-              onClick={() => setActiveTab("feedback")}
-              className={`px-4 py-3 font-medium border-b-2 transition ${
-                activeTab === "feedback"
-                  ? "border-blue-500 text-white"
-                  : "border-transparent text-slate-400 hover:text-slate-300"
-              }`}
-            >
-              Feedback ({feedback.length})
-            </button>
+      {/* Main Content */}
+      <div className="flex-1 overflow-auto pb-4">
+        <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6">
+          {/* Mobile: Stat Cards - Compact Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-4 mb-6">
+            <StatCard
+              label="Stores"
+              value={globalStats.totalStores}
+              icon={<Activity className="w-4 h-4 sm:w-5 sm:h-5" />}
+              trend={null}
+            />
+            <StatCard
+              label="Pro"
+              value={globalStats.activePlans["pro"] || 0}
+              icon={<TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400" />}
+              trend={null}
+            />
+            <StatCard
+              label="Chats"
+              value={globalStats.totalChats}
+              icon={<MessageSquare className="w-4 h-4 sm:w-5 sm:h-5 text-green-400" />}
+              trend={null}
+            />
+            <StatCard
+              label="Risk"
+              value={globalStats.storesAtRisk}
+              icon={<AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-red-400" />}
+              trend={`${Math.round((globalStats.storesAtRisk / globalStats.totalStores) * 100)}%`}
+            />
+            <StatCard
+              label="Avg $"
+              value={`$${globalStats.avgRevenuePerStore.toFixed(0)}`}
+              icon={<DollarSign className="w-4 h-4 sm:w-5 sm:h-5 text-green-400" />}
+              trend={null}
+            />
+            <StatCard
+              label="MRR"
+              value={`$${Math.round(globalStats.totalMrr)}`}
+              icon={<TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-purple-400" />}
+              trend={null}
+            />
           </div>
-        </div>
 
-        {/* Stores Tab */}
-        {activeTab === "stores" && (
-          <>
-            {/* Search & Sort */}
-            <div className="bg-slate-800 rounded-lg border border-slate-700 p-4 mb-6 flex flex-col sm:flex-row gap-4 items-stretch sm:items-center">
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 top-3 text-slate-500" size={18} />
-                <input
-                  type="text"
-                  placeholder="Search by domain..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as any)}
-                className="px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          {/* Tabs */}
+          <div className="mb-6 border-b border-slate-700">
+            <div className="flex gap-4 sm:gap-6">
+              <button
+                onClick={() => {
+                  setActiveTab("stores");
+                  setMobileMenuOpen(false);
+                }}
+                className={`px-3 sm:px-4 py-3 font-medium text-sm sm:text-base border-b-2 transition whitespace-nowrap ${
+                  activeTab === "stores"
+                    ? "border-blue-500 text-white"
+                    : "border-transparent text-slate-400 hover:text-slate-300"
+                }`}
               >
-                <option value="activity">Sort: Activity</option>
-                <option value="domain">Sort: Domain (A-Z)</option>
-                <option value="plan">Sort: Plan</option>
-                <option value="health">Sort: Health Status</option>
-                <option value="revenue">Sort: Revenue</option>
-              </select>
+                Stores ({globalStats.totalStores})
+              </button>
+              <button
+                onClick={() => {
+                  setActiveTab("feedback");
+                  setMobileMenuOpen(false);
+                }}
+                className={`px-3 sm:px-4 py-3 font-medium text-sm sm:text-base border-b-2 transition whitespace-nowrap ${
+                  activeTab === "feedback"
+                    ? "border-blue-500 text-white"
+                    : "border-transparent text-slate-400 hover:text-slate-300"
+                }`}
+              >
+                Feedback ({feedback.length})
+              </button>
             </div>
+          </div>
 
-            {/* Stores Table */}
-            <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="bg-slate-900 border-b border-slate-700">
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase tracking-wide">
-                        Domain
-                      </th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase tracking-wide">
-                        Plan
-                      </th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase tracking-wide">
-                        Health
-                      </th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase tracking-wide">
-                        Last Active
-                      </th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase tracking-wide">
-                        Chats
-                      </th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase tracking-wide">
-                        Revenue
-                      </th>
-                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase tracking-wide">
-                        Widget
-                      </th>
-                      <th className="px-6 py-4 w-8"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredStores.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="px-6 py-8 text-center">
-                          <p className="text-slate-400">No stores found</p>
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredStores.map((store) => (
-                        <React.Fragment key={store.id}>
-                          <tr
-                            className="border-b border-slate-700 hover:bg-slate-700 transition cursor-pointer"
-                            onClick={() =>
-                              setExpandedStore(expandedStore === store.id ? null : store.id)
-                            }
-                          >
-                            <td className="px-6 py-4 text-sm font-medium text-white">
-                              {store.shop}
-                            </td>
-                            <td className="px-6 py-4 text-sm">
-                              <span
-                                className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
-                                  store.plan === "pro"
-                                    ? "bg-blue-900 text-blue-300"
-                                    : "bg-slate-700 text-slate-300"
-                                }`}
-                              >
-                                {store.plan}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-sm">
-                              <HealthBadge score={store.healthScore} />
-                            </td>
-                            <td className="px-6 py-4 text-sm text-slate-300">
-                              {store.daysInactive === 999 ? (
-                                <span className="text-slate-500">Never</span>
-                              ) : (
-                                <>
-                                  {formatTimeAgo(new Date(store.lastActiveAt!))}
-                                  <span className="text-slate-500 text-xs ml-1">
-                                    ({store.daysInactive}d)
-                                  </span>
-                                </>
-                              )}
-                            </td>
-                            <td className="px-6 py-4 text-sm font-medium text-white">
-                              {store.totalChats}
-                            </td>
-                            <td className="px-6 py-4 text-sm font-semibold text-green-400">
-                              ${store.totalAiRevenue.toFixed(2)}
-                            </td>
-                            <td className="px-6 py-4 text-sm">
-                              <span
-                                className={`text-xs font-semibold px-2 py-1 rounded ${
-                                  store.widgetEnabled
-                                    ? "bg-green-900 text-green-300"
-                                    : "bg-slate-700 text-slate-400"
-                                }`}
-                              >
-                                {store.widgetEnabled ? "ON" : "OFF"}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4">
-                              <ChevronDown
-                                size={18}
-                                className={`text-slate-400 transition-transform ${
-                                  expandedStore === store.id ? "rotate-180" : ""
-                                }`}
-                              />
-                            </td>
-                          </tr>
-
-                          {/* Expanded Row */}
-                          {expandedStore === store.id && (
-                            <tr className="bg-slate-750 border-b border-slate-700">
-                              <td colSpan={8} className="px-6 py-6">
-                                <StoreDetailPanel store={store} />
-                              </td>
-                            </tr>
-                          )}
-                        </React.Fragment>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+          {/* Stores Tab */}
+          {activeTab === "stores" && (
+            <>
+              {/* Mobile: Search & Sort */}
+              <div className="bg-slate-800 rounded-lg border border-slate-700 p-3 sm:p-4 mb-6 space-y-3">
+                <div className="relative">
+                  <Search className="absolute left-3 top-2.5 text-slate-500" size={16} />
+                  <input
+                    type="text"
+                    placeholder="Search domain..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as any)}
+                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="activity">Sort: Activity</option>
+                  <option value="domain">Sort: Domain</option>
+                  <option value="plan">Sort: Plan</option>
+                  <option value="health">Sort: Health</option>
+                  <option value="revenue">Sort: Revenue</option>
+                </select>
               </div>
-            </div>
-          </>
-        )}
 
-        {/* Feedback Tab */}
-        {activeTab === "feedback" && (
-          <FeedbackInbox entries={feedback} />
-        )}
+              {/* Desktop: Table View, Mobile: Card View */}
+              <div className="hidden sm:block bg-slate-800 rounded-lg border border-slate-700 overflow-hidden">
+                <TableView stores={filteredStores} expandedStore={expandedStore} setExpandedStore={setExpandedStore} />
+              </div>
+
+              {/* Mobile: Card View */}
+              <div className="sm:hidden space-y-3">
+                {filteredStores.length === 0 ? (
+                  <div className="text-center py-8 text-slate-400">No stores found</div>
+                ) : (
+                  filteredStores.map((store) => (
+                    <MobileStoreCard
+                      key={store.id}
+                      store={store}
+                      expanded={expandedStore === store.id}
+                      onToggle={() => setExpandedStore(expandedStore === store.id ? null : store.id)}
+                    />
+                  ))
+                )}
+              </div>
+            </>
+          )}
+
+          {/* Feedback Tab */}
+          {activeTab === "feedback" && <FeedbackInbox entries={feedback} />}
+        </div>
       </div>
     </div>
   );
@@ -553,40 +457,28 @@ interface StatCardProps {
 
 function StatCard({ label, value, icon, trend }: StatCardProps) {
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 hover:bg-slate-750 transition">
-      <div className="flex items-start justify-between mb-3">
-        <div className="text-slate-400">{icon}</div>
-        {trend && <span className="text-red-400 text-sm font-semibold">{trend}</span>}
+    <div className="bg-slate-800 border border-slate-700 rounded-lg p-2.5 sm:p-4 hover:bg-slate-750 transition">
+      <div className="flex items-start justify-between mb-2">
+        <div className="text-slate-400 text-sm sm:text-base">{icon}</div>
+        {trend && <span className="text-red-400 text-xs font-semibold">{trend}</span>}
       </div>
-      <div className="text-2xl font-bold text-white">{value}</div>
-      <div className="text-xs text-slate-400 mt-1">{label}</div>
+      <div className="text-lg sm:text-2xl font-bold text-white">{value}</div>
+      <div className="text-xs text-slate-400 mt-0.5">{label}</div>
     </div>
   );
 }
 
 function HealthBadge({ score }: { score: "green" | "yellow" | "red" }) {
   const config = {
-    green: {
-      bg: "bg-green-900",
-      text: "text-green-300",
-      icon: "✓",
-    },
-    yellow: {
-      bg: "bg-yellow-900",
-      text: "text-yellow-300",
-      icon: "!",
-    },
-    red: {
-      bg: "bg-red-900",
-      text: "text-red-300",
-      icon: "⚠",
-    },
+    green: { bg: "bg-green-900", text: "text-green-300", icon: "✓" },
+    yellow: { bg: "bg-yellow-900", text: "text-yellow-300", icon: "!" },
+    red: { bg: "bg-red-900", text: "text-red-300", icon: "⚠" },
   };
 
   const { bg, text, icon } = config[score];
 
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${bg} ${text}`}>
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold ${bg} ${text}`}>
       <span>{icon}</span>
       {score}
     </span>
@@ -597,15 +489,153 @@ function formatTimeAgo(date: Date): string {
   const now = new Date();
   const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
 
-  if (seconds < 60) return "just now";
+  if (seconds < 60) return "now";
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return `${hours}h`;
   const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
+  if (days < 7) return `${days}d`;
   const weeks = Math.floor(days / 7);
-  return `${weeks}w ago`;
+  return `${weeks}w`;
+}
+
+interface TableViewProps {
+  stores: StoreRow[];
+  expandedStore: string | null;
+  setExpandedStore: (id: string | null) => void;
+}
+
+function TableView({ stores, expandedStore, setExpandedStore }: TableViewProps) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full">
+        <thead>
+          <tr className="bg-slate-900 border-b border-slate-700">
+            <th className="px-4 py-3 text-left text-xs font-semibold text-slate-300">Domain</th>
+            <th className="px-4 py-3 text-left text-xs font-semibold text-slate-300">Plan</th>
+            <th className="px-4 py-3 text-left text-xs font-semibold text-slate-300">Health</th>
+            <th className="px-4 py-3 text-left text-xs font-semibold text-slate-300">Active</th>
+            <th className="px-4 py-3 text-left text-xs font-semibold text-slate-300">Chats</th>
+            <th className="px-4 py-3 text-left text-xs font-semibold text-slate-300">Revenue</th>
+            <th className="px-4 py-3 w-8"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {stores.length === 0 ? (
+            <tr>
+              <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                No stores found
+              </td>
+            </tr>
+          ) : (
+            stores.map((store) => (
+              <React.Fragment key={store.id}>
+                <tr
+                  className="border-b border-slate-700 hover:bg-slate-700 transition cursor-pointer"
+                  onClick={() => setExpandedStore(expandedStore === store.id ? null : store.id)}
+                >
+                  <td className="px-4 py-3 text-sm font-medium text-white truncate max-w-xs">
+                    {store.shop}
+                  </td>
+                  <td className="px-4 py-3 text-sm">
+                    <span
+                      className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                        store.plan === "pro"
+                          ? "bg-blue-900 text-blue-300"
+                          : "bg-slate-700 text-slate-300"
+                      }`}
+                    >
+                      {store.plan}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-sm">
+                    <HealthBadge score={store.healthScore} />
+                  </td>
+                  <td className="px-4 py-3 text-sm text-slate-300">
+                    {store.daysInactive === 999 ? (
+                      <span className="text-slate-500 text-xs">Never</span>
+                    ) : (
+                      <div className="text-xs">
+                        {formatTimeAgo(new Date(store.lastActiveAt!))}
+                        <div className="text-slate-500">({store.daysInactive}d)</div>
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-sm font-medium text-white">{store.totalChats}</td>
+                  <td className="px-4 py-3 text-sm font-semibold text-green-400">
+                    ${store.totalAiRevenue.toFixed(0)}
+                  </td>
+                  <td className="px-4 py-3">
+                    <ChevronDown
+                      size={16}
+                      className={`text-slate-400 transition-transform ${expandedStore === store.id ? "rotate-180" : ""}`}
+                    />
+                  </td>
+                </tr>
+
+                {expandedStore === store.id && (
+                  <tr className="bg-slate-750 border-b border-slate-700">
+                    <td colSpan={7} className="px-4 py-4 sm:px-6 sm:py-6">
+                      <StoreDetailPanel store={store} />
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+interface MobileStoreCardProps {
+  store: StoreRow;
+  expanded: boolean;
+  onToggle: () => void;
+}
+
+function MobileStoreCard({ store, expanded, onToggle }: MobileStoreCardProps) {
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
+      <button
+        onClick={onToggle}
+        className="w-full p-4 flex items-start justify-between hover:bg-slate-750 transition text-left"
+      >
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-white text-sm truncate">{store.shop}</h3>
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
+              store.plan === "pro"
+                ? "bg-blue-900 text-blue-300"
+                : "bg-slate-700 text-slate-300"
+            }`}>
+              {store.plan}
+            </span>
+            <HealthBadge score={store.healthScore} />
+            <span className="text-xs text-slate-400">
+              {store.daysInactive === 999 ? "Never" : `${store.daysInactive}d`}
+            </span>
+          </div>
+          <div className="flex items-center gap-4 mt-2 text-xs text-slate-300">
+            <div><strong>{store.totalChats}</strong> chats</div>
+            <div className="text-green-400"><strong>${store.totalAiRevenue.toFixed(0)}</strong></div>
+          </div>
+        </div>
+        <ChevronDown
+          size={20}
+          className={`text-slate-400 flex-shrink-0 transition-transform ml-2 ${expanded ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {expanded && (
+        <div className="border-t border-slate-700 p-4 space-y-4">
+          <StoreDetailPanel store={store} />
+        </div>
+      )}
+    </div>
+  );
 }
 
 interface StoreDetailPanelProps {
@@ -637,7 +667,6 @@ function StoreDetailPanel({ store }: StoreDetailPanelProps) {
     const formData = new FormData();
     formData.append("_action", "extend-trial");
     formData.append("shopId", store.id);
-
     fetcher.submit(formData, { method: "POST" });
   };
 
@@ -645,56 +674,46 @@ function StoreDetailPanel({ store }: StoreDetailPanelProps) {
     const formData = new FormData();
     formData.append("_action", "toggle-widget");
     formData.append("shopId", store.id);
-
     fetcher.submit(formData, { method: "POST" });
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-      {/* Left: Metrics & Trial */}
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      {/* Metrics */}
       <div>
-        <h3 className="text-lg font-semibold text-white mb-4">Store Metrics</h3>
-        <div className="space-y-4 bg-slate-900 rounded-lg p-4 border border-slate-700">
-          <MetricRow label="Total Chats" value={store.totalChats.toString()} />
-          <MetricRow label="AI Revenue" value={`$${store.totalAiRevenue.toFixed(2)}`} highlight />
-          <MetricRow label="Deflection Rate" value={`${store.deflectionPercent}%`} />
-          <MetricRow label="Days Inactive" value={store.daysInactive === 999 ? "Never active" : `${store.daysInactive}d`} />
+        <h3 className="text-sm sm:text-base font-semibold text-white mb-3">Metrics</h3>
+        <div className="space-y-2 bg-slate-900 rounded-lg p-3 border border-slate-700 text-sm">
+          <MetricRow label="Chats" value={store.totalChats.toString()} />
+          <MetricRow label="Revenue" value={`$${store.totalAiRevenue.toFixed(2)}`} highlight />
+          <MetricRow label="Deflection" value={`${store.deflectionPercent}%`} />
+          <MetricRow label="Inactive" value={store.daysInactive === 999 ? "Never" : `${store.daysInactive}d`} />
           {store.trialEndsAt && (
-            <MetricRow
-              label="Trial Expires"
-              value={new Date(store.trialEndsAt).toLocaleDateString()}
-            />
+            <MetricRow label="Trial" value={new Date(store.trialEndsAt).toLocaleDateString()} />
           )}
-          <MetricRow label="Created" value={new Date(store.createdAt).toLocaleDateString()} />
         </div>
       </div>
 
-      {/* Middle: Controls */}
+      {/* Controls */}
       <div>
-        <h3 className="text-lg font-semibold text-white mb-4">Admin Controls</h3>
-        <div className="space-y-3">
-          {/* Widget Toggle */}
-          <div className="bg-slate-900 rounded-lg p-4 border border-slate-700">
-            <p className="text-sm text-slate-300 mb-3">Widget Status</p>
-            <button
-              onClick={handleToggleWidget}
-              className={`w-full px-4 py-2 rounded-lg font-medium transition text-sm ${
-                store.widgetEnabled
-                  ? "bg-green-900 text-green-300 hover:bg-green-800"
-                  : "bg-slate-700 text-slate-300 hover:bg-slate-600"
-              }`}
-            >
-              {store.widgetEnabled ? "✓ Widget: ON" : "✗ Widget: OFF"}
-            </button>
-          </div>
+        <h3 className="text-sm sm:text-base font-semibold text-white mb-3">Controls</h3>
+        <div className="space-y-2">
+          <button
+            onClick={handleToggleWidget}
+            className={`w-full px-3 py-2 rounded-lg font-medium text-sm transition ${
+              store.widgetEnabled
+                ? "bg-green-900 text-green-300 hover:bg-green-800"
+                : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+            }`}
+          >
+            {store.widgetEnabled ? "✓ Widget ON" : "✗ Widget OFF"}
+          </button>
 
-          {/* Health Override */}
-          <div className="bg-slate-900 rounded-lg p-4 border border-slate-700">
-            <p className="text-sm text-slate-300 mb-3">Health Override</p>
+          <div className="bg-slate-900 rounded-lg p-3 border border-slate-700">
+            <label className="text-xs text-slate-400 mb-2 block">Health</label>
             <select
               value={selectedHealth}
               onChange={(e) => setSelectedHealth(e.target.value as any)}
-              className="w-full px-3 py-2 bg-slate-700 border border-slate-600 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-2 py-1.5 bg-slate-700 border border-slate-600 text-white rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="green">🟢 Green</option>
               <option value="yellow">🟡 Yellow</option>
@@ -707,47 +726,40 @@ function StoreDetailPanel({ store }: StoreDetailPanelProps) {
                 <input type="hidden" name="healthScore" value={selectedHealth} />
                 <button
                   type="submit"
-                  className="w-full px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition"
+                  className="w-full px-2 py-1 bg-blue-600 text-white rounded text-xs font-medium hover:bg-blue-700 transition"
                 >
-                  Apply Health Change
+                  Apply
                 </button>
               </fetcher.Form>
             )}
           </div>
 
-          {/* Trial Extension */}
           {store.plan === "free" && (
-            <div className="bg-slate-900 rounded-lg p-4 border border-slate-700">
-              <p className="text-sm text-slate-300 mb-3">Trial Management</p>
-              <button
-                onClick={handleExtendTrial}
-                className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition text-sm flex items-center justify-center gap-2"
-              >
-                <Zap size={16} />
-                Extend Trial +7d
-              </button>
-              {fetcher.data?.type === "extend-trial" && (
-                <p className="text-xs text-green-400 mt-2">✓ Trial extended</p>
-              )}
-            </div>
+            <button
+              onClick={handleExtendTrial}
+              className="w-full px-3 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition text-sm flex items-center justify-center gap-1"
+            >
+              <Zap size={14} />
+              Extend +7d
+            </button>
           )}
         </div>
       </div>
 
-      {/* Right: Notes */}
-      <div>
-        <h3 className="text-lg font-semibold text-white mb-4">Internal Notes</h3>
-        <div className="bg-slate-900 rounded-lg p-4 border border-slate-700">
+      {/* Notes */}
+      <div className="sm:col-span-2 lg:col-span-1">
+        <h3 className="text-sm sm:text-base font-semibold text-white mb-3">Notes</h3>
+        <div className="bg-slate-900 rounded-lg p-3 border border-slate-700">
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             onBlur={handleSaveNotes}
-            placeholder="Add private notes about this store..."
-            className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm mb-2"
-            rows={6}
+            placeholder="Add notes..."
+            className="w-full px-2 py-2 bg-slate-800 border border-slate-600 rounded text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs mb-2"
+            rows={3}
           />
           <div className="text-xs text-slate-400">
-            {isSaving ? "🔄 Saving..." : "✓ Auto-saves on blur"}
+            {isSaving ? "🔄 Saving..." : "✓ Auto-saves"}
           </div>
         </div>
       </div>
@@ -757,9 +769,9 @@ function StoreDetailPanel({ store }: StoreDetailPanelProps) {
 
 function MetricRow({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) {
   return (
-    <div className="flex justify-between items-center">
-      <span className="text-sm text-slate-400">{label}</span>
-      <span className={`font-semibold text-sm ${highlight ? "text-green-400" : "text-white"}`}>
+    <div className="flex justify-between items-center py-1">
+      <span className="text-slate-400">{label}</span>
+      <span className={`font-semibold ${highlight ? "text-green-400" : "text-white"}`}>
         {value}
       </span>
     </div>
@@ -782,22 +794,22 @@ function FeedbackInbox({ entries }: FeedbackInboxProps) {
 
   return (
     <div>
-      <div className="mb-4 flex justify-between items-center">
-        <p className="text-slate-400">Total feedback submissions: {entries.length}</p>
+      <div className="mb-4 flex justify-between items-center flex-wrap gap-2">
+        <p className="text-slate-400 text-sm">{entries.length} total</p>
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as any)}
-          className="px-3 py-1.5 bg-slate-800 border border-slate-700 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="px-3 py-1.5 bg-slate-800 border border-slate-700 text-white rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
-          <option value="recent">Most Recent</option>
-          <option value="oldest">Oldest First</option>
+          <option value="recent">Recent</option>
+          <option value="oldest">Oldest</option>
         </select>
       </div>
 
       {sorted.length === 0 ? (
-        <div className="bg-slate-800 rounded-lg border border-slate-700 p-8 text-center">
-          <MessageSquare className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-          <p className="text-slate-400">No feedback yet</p>
+        <div className="bg-slate-800 rounded-lg border border-slate-700 p-6 sm:p-8 text-center">
+          <MessageSquare className="w-10 h-10 text-slate-600 mx-auto mb-2" />
+          <p className="text-slate-400 text-sm">No feedback yet</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -806,10 +818,10 @@ function FeedbackInbox({ entries }: FeedbackInboxProps) {
               key={entry.id}
               className="bg-slate-800 rounded-lg border border-slate-700 p-4 hover:border-slate-600 transition"
             >
-              <div className="flex items-start justify-between mb-2">
-                <div>
-                  <p className="font-semibold text-white text-sm">{entry.shop}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">
+              <div className="flex items-start justify-between mb-2 flex-wrap gap-2">
+                <div className="min-w-0">
+                  <p className="font-semibold text-white text-sm truncate">{entry.shop}</p>
+                  <p className="text-xs text-slate-400 mt-1">
                     <Clock size={12} className="inline mr-1" />
                     {new Date(entry.createdAt).toLocaleString()}
                   </p>
@@ -817,15 +829,15 @@ function FeedbackInbox({ entries }: FeedbackInboxProps) {
                 {entry.email && (
                   <a
                     href={`mailto:${entry.email}`}
-                    className="text-blue-400 hover:text-blue-300 text-xs font-medium"
+                    className="text-blue-400 hover:text-blue-300 text-xs font-medium flex-shrink-0"
                   >
                     Reply
                   </a>
                 )}
               </div>
-              <p className="text-slate-300 text-sm leading-relaxed">{entry.message}</p>
+              <p className="text-slate-300 text-sm leading-relaxed break-words">{entry.message}</p>
               {entry.email && (
-                <p className="text-xs text-slate-500 mt-3">📧 {entry.email}</p>
+                <p className="text-xs text-slate-500 mt-2 break-all">📧 {entry.email}</p>
               )}
             </div>
           ))}
