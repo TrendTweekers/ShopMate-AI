@@ -1,5 +1,5 @@
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useFetcher, useLoaderData } from "react-router";
+import { useFetcher, useLoaderData, useNavigate } from "react-router";
 import { MessageSquare, ShieldCheck, Clock, TrendingUp, Zap, DollarSign } from "lucide-react";
 import KpiCard from "~/components/admin/KpiCard";
 import {
@@ -277,7 +277,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     plan: settings.plan as "free" | "pro",
     messageCount: settings.messageCount,
     freeLimit: FREE_LIMIT,
-    billingUrl: `/app/billing`,
     // Review banner — only truthy when a trigger fires
     reviewTrigger: reviewTrigger as string | false,
     aiHandledChats: settings.aiHandledChats ?? 0,
@@ -410,7 +409,6 @@ export default function Dashboard() {
     plan,
     messageCount,
     freeLimit,
-    billingUrl,
     reviewTrigger,
     aiHandledChats,
     totalRevenue,
@@ -418,6 +416,8 @@ export default function Dashboard() {
     revenueChangePct,
     revenueLeaderboard,
   } = useLoaderData<typeof loader>();
+
+  const navigate = useNavigate();
 
   const isPro = plan === "pro";
   const usagePct = isPro ? 100 : Math.min(100, Math.round((messageCount / freeLimit) * 100));
@@ -475,8 +475,8 @@ export default function Dashboard() {
         )}
 
         {!isPro && (
-          <a
-            href={billingUrl}
+          <button
+            onClick={() => navigate("/app/billing")}
             style={{
               padding: "6px 14px",
               borderRadius: 8,
@@ -484,12 +484,13 @@ export default function Dashboard() {
               color: "#fff",
               fontSize: 13,
               fontWeight: 600,
-              textDecoration: "none",
+              border: "none",
+              cursor: "pointer",
               whiteSpace: "nowrap" as const,
             }}
           >
             Upgrade to Pro — $29/mo
-          </a>
+          </button>
         )}
       </div>
 
@@ -668,7 +669,23 @@ export default function Dashboard() {
 
       {/* Recent Conversations */}
       <div className="polaris-card">
-        <h3 className="polaris-card-header">Recent Conversations</h3>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <h3 className="polaris-card-header" style={{ margin: 0 }}>Recent Conversations</h3>
+          <button
+            onClick={() => navigate("/app/conversations")}
+            style={{
+              fontSize: 12,
+              color: "#008060",
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              fontWeight: 500,
+              textDecoration: "underline",
+            }}
+          >
+            View all →
+          </button>
+        </div>
         {latestConversations.length === 0 ? (
           <p className="text-sm text-muted-foreground py-4 text-center">
             No conversations yet. The widget will appear here once customers start chatting.
@@ -676,9 +693,22 @@ export default function Dashboard() {
         ) : (
           <div className="divide-y divide-border">
             {latestConversations.map((conv) => (
-              <div
+              <button
                 key={conv.id}
-                className="flex items-center justify-between py-3 first:pt-0 last:pb-0"
+                onClick={() => navigate(`/app/conversations?id=${conv.id}`)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  width: "100%",
+                  padding: "10px 0",
+                  background: "transparent",
+                  border: "none",
+                  borderBottom: "1px solid hsl(210 10% 92%)",
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+                className="hover:bg-surface-hover"
               >
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-medium text-muted-foreground font-mono">
@@ -701,7 +731,7 @@ export default function Dashboard() {
                   </span>
                   <span className="text-xs text-muted-foreground">{timeAgo(conv.updatedAt)}</span>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         )}
