@@ -50,6 +50,13 @@ model ShopSettings {
   // Counters for smart triggers
   aiHandledChats  Int       @default(0)         // chats fully handled by AI (no escalation)
   orderTrackingResolved Int @default(0)         // order tracking queries answered
+  // Admin dashboard fields
+  internalNotes   String?                       // private notes visible only to admin
+  lastActiveAt    DateTime?                     // last time merchant accessed the app
+  totalAiRevenue  Float     @default(0)         // cumulative attributed revenue
+  healthScore     String    @default("green")   // "green" | "yellow" | "red"
+  widgetEnabled   Boolean   @default(true)      // admin can toggle widget on/off
+  trialEndsAt     DateTime?                     // when the trial expires (for trial plans)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 }
