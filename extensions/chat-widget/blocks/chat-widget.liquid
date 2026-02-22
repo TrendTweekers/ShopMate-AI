@@ -32,7 +32,8 @@
         var raw = {{ block.settings.quick_replies | json }};
         if (!raw || !raw.trim()) return [];
         return raw.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
-      })()
+      })(),
+      exitIntent: {{ block.settings.exit_intent | json }}
     };
   </script>
   {{ 'chat-widget.js' | asset_url | script_tag }}
@@ -83,6 +84,13 @@
       "label": "Quick-reply chips (comma-separated)",
       "info": "Shown below the greeting until the shopper types. Leave blank to disable.",
       "default": "Track my order,Recommend a product,What's your return policy?,Talk to a human"
+    },
+    {
+      "type": "checkbox",
+      "id": "exit_intent",
+      "label": "Exit-intent trigger",
+      "info": "Show a nudge bubble when a visitor moves their mouse toward the browser tab bar. Helps reduce bounce rate. Shown once per session.",
+      "default": false
     }
   ]
 }
