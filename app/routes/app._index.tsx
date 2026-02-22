@@ -1,5 +1,5 @@
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useFetcher, useLoaderData, useNavigate, useRouteError } from "react-router";
+import { Form, useLoaderData, useNavigate, useRouteError } from "react-router";
 import { useState, useEffect, useRef } from "react";
 import { MessageSquare, ShieldCheck, Clock, TrendingUp, Zap, DollarSign, MessageCircle } from "lucide-react";
 import KpiCard from "~/components/admin/KpiCard";
@@ -154,6 +154,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session, billing } = await authenticate.admin(request);
   const shop = session.shop;
+
+  // Check for feedback success parameter from redirect
+  const url = new URL(request.url);
+  const feedbackSuccess = url.searchParams.has("feedback") && url.searchParams.get("feedback") === "success";
 
   // ── Billing check ──
   const { hasActivePayment } = await billing.check({
@@ -336,6 +340,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     weekRevenue,
     revenueChangePct,
     revenueLeaderboard,
+    // Feedback success flag (from redirect after form submission)
+    feedbackSuccess,
   };
 };
 
@@ -449,29 +455,26 @@ function ReviewBanner({
 
 // ─── FeedbackModal component ──────────────────────────────────────────────────
 
-function FeedbackModal({ onClose }: { onClose: () => void }) {
-  const fetcher = useFetcher<{ ok: boolean; error?: string }>();
+function FeedbackModal({ onClose, feedbackSuccess }: { onClose: () => void; feedbackSuccess: boolean }) {
   const [message, setMessage] = useState("");
   const [email, setEmail]     = useState("");
-  const [toastMsg, setToastMsg] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Focus textarea when modal opens
   useEffect(() => { textareaRef.current?.focus(); }, []);
 
-  // Handle response from fetcher
+  // Show success toast if redirected back with success parameter
   useEffect(() => {
-    console.log("[feedback-modal] Fetcher state changed:", fetcher.state, "data:", fetcher.data);
-    if (fetcher.state === "idle" && fetcher.data) {
-      console.log("[feedback-modal] Fetcher response received:", fetcher.data);
-      if (fetcher.data.ok) {
-        setToastMsg("✓ Feedback sent — thank you!");
+    if (feedbackSuccess) {
+      console.log("[feedback-modal] Feedback success detected from redirect");
+      // Brief success state before closing
+      setTimeout(() => {
         setMessage("");
         setEmail("");
-        setTimeout(onClose, 2000);
-      }
+        onClose();
+      }, 1500);
     }
-  }, [fetcher.state, fetcher.data, onClose]);
+  }, [feedbackSuccess, onClose]);
 
   // Close on Escape key
   useEffect(() => {
@@ -480,32 +483,10 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
 
-  const isSubmitting = fetcher.state !== "idle";
-  const serverError  = fetcher.data?.ok === false ? fetcher.data.error : null;
-
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-
-    if (!message.trim()) {
-      return;
-    }
-
-    console.log("[feedback-modal] Submitting feedback via fetcher (no action prop)...");
-    const formData = new FormData();
-    formData.append("message", message);
-    if (email.trim()) {
-      formData.append("email", email);
-    }
-
-    // Submit to current route's action (app._index action)
-    // This should work in embedded context since it doesn't specify an action prop
-    fetcher.submit(formData, { method: "post" });
-  };
-
   return (
     <>
-      {/* Toast notification */}
-      {toastMsg && (
+      {/* Success toast notification — shown on redirect redirect */}
+      {feedbackSuccess && (
         <div
           style={{
             position: "fixed",
@@ -524,7 +505,7 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
             animation: "slideUp 0.3s ease-out",
           }}
         >
-          {toastMsg}
+          ✓ Feedback sent — thank you!
         </div>
       )}
 
@@ -592,8 +573,8 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        {/* Form - using direct fetch for embedded context compatibility */}
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        {/* Form - using React Router <Form> component for proper embedded context handling */}
+        <Form method="post" action="/app/feedback" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           {/* Message */}
           <div>
             <label
@@ -686,25 +667,6 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
             />
           </div>
 
-          {/* Error message */}
-          {serverError && (
-            <div style={{
-              margin: 0,
-              fontSize: 14,
-              color: "#991b1b",
-              background: "#fee2e2",
-              padding: "12px 14px",
-              borderRadius: 8,
-              border: "1px solid #fecaca",
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-            }}>
-              <span style={{ fontSize: 16 }}>⚠</span>
-              <span>{serverError}</span>
-            </div>
-          )}
-
           {/* Actions */}
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 4 }}>
             <button
@@ -728,34 +690,34 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
             </button>
             <button
               type="submit"
-              disabled={isSubmitting || !message.trim()}
+              disabled={!message.trim()}
               style={{
                 padding: "10px 24px",
                 borderRadius: 8,
-                background: isSubmitting || !message.trim() ? "#d1d5db" : "#008060",
+                background: !message.trim() ? "#d1d5db" : "#008060",
                 color: "#fff",
                 border: "none",
                 fontSize: 15,
                 fontWeight: 600,
-                cursor: isSubmitting || !message.trim() ? "not-allowed" : "pointer",
+                cursor: !message.trim() ? "not-allowed" : "pointer",
                 transition: "background 0.15s",
-                opacity: isSubmitting || !message.trim() ? 0.7 : 1,
+                opacity: !message.trim() ? 0.7 : 1,
               }}
               onMouseEnter={(e) => {
-                if (!isSubmitting && message.trim()) {
+                if (message.trim()) {
                   e.currentTarget.style.background = "#0a7255";
                 }
               }}
               onMouseLeave={(e) => {
-                if (!isSubmitting && message.trim()) {
+                if (message.trim()) {
                   e.currentTarget.style.background = "#008060";
                 }
               }}
             >
-              {isSubmitting ? "Sending…" : "Send Feedback"}
+              Send Feedback
             </button>
           </div>
-        </form>
+        </Form>
       </div>
     </>
   );
@@ -780,6 +742,7 @@ export default function Dashboard() {
     weekRevenue,
     revenueChangePct,
     revenueLeaderboard,
+    feedbackSuccess,
   } = useLoaderData<typeof loader>();
 
   const navigate = useNavigate();
@@ -909,7 +872,7 @@ export default function Dashboard() {
       </div>
 
       {/* Feedback modal — rendered at root of the component so it overlays everything */}
-      {feedbackOpen && <FeedbackModal onClose={() => setFeedbackOpen(false)} />}
+      {feedbackOpen && <FeedbackModal onClose={() => setFeedbackOpen(false)} feedbackSuccess={feedbackSuccess} />}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">

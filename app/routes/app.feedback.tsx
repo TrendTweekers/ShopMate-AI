@@ -6,11 +6,12 @@
  *   email    (optional)
  *
  * Saves feedback to the DB (Feedback table).
- * Email notification is optional (no dependency on mail server).
- * Returns { ok: true } or { ok: false, error: string }
+ * Redirects back to /app with ?feedback=success on success
+ * Redirects back to /app with ?feedback=error on failure
  */
 
 import type { ActionFunctionArgs } from "react-router";
+import { redirect } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "~/db.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -34,11 +35,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     // Validate
     if (!message) {
       console.log("[feedback] Validation failed: no message");
-      return Response.json({ ok: false, error: "Message is required." }, { status: 400 });
+      return redirect("/app?feedback=error");
     }
     if (message.length > 5000) {
       console.log("[feedback] Validation failed: message too long");
-      return Response.json({ ok: false, error: "Message is too long (max 5,000 characters)." }, { status: 400 });
+      return redirect("/app?feedback=error");
     }
 
     // Fetch current plan from DB
@@ -56,16 +57,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     console.log(`[feedback] ✅ Feedback saved successfully with ID: ${savedFeedback.id}`);
 
-    return Response.json({ ok: true });
+    // Redirect back to dashboard with success parameter
+    return redirect("/app?feedback=success");
   } catch (err) {
     console.error("[feedback] ❌ Error:", err instanceof Error ? err.message : String(err));
     if (err instanceof Error) {
       console.error("[feedback] Stack:", err.stack);
     }
-    return Response.json(
-      { ok: false, error: "Failed to save feedback. Please try again." },
-      { status: 500 }
-    );
+    return redirect("/app?feedback=error");
   }
 };
 
