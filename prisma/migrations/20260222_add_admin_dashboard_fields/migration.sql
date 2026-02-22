@@ -1,0 +1,7 @@
+-- AlterTable
+ALTER TABLE "ShopSettings" ADD COLUMN "internalNotes" TEXT,
+ADD COLUMN "lastActiveAt" TIMESTAMP(3),
+ADD COLUMN "totalAiRevenue" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN "healthScore" TEXT NOT NULL DEFAULT 'green',
+ADD COLUMN "widgetEnabled" BOOLEAN NOT NULL DEFAULT true,
+ADD COLUMN "trialEndsAt" TIMESTAMP(3);
