@@ -1,5 +1,5 @@
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useFetcher, useLoaderData, useNavigate, useRouteError } from "react-router";
+import { useFetcher, useLoaderData, useNavigate, useRouteError, Form } from "react-router";
 import { useState, useEffect, useRef } from "react";
 import { MessageSquare, ShieldCheck, Clock, TrendingUp, Zap, DollarSign, MessageCircle } from "lucide-react";
 import KpiCard from "~/components/admin/KpiCard";
@@ -430,17 +430,6 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
   const isSubmitting = fetcher.state !== "idle";
   const serverError  = fetcher.data?.ok === false ? fetcher.data.error : null;
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!message.trim()) return;
-    console.log("[feedback-modal] Submitting feedback:", { messageLen: message.length, hasEmail: !!email.trim() });
-    const fd = new FormData();
-    fd.append("message", message.trim());
-    if (email.trim()) fd.append("email", email.trim());
-    console.log("[feedback-modal] Sending to /app/feedback");
-    fetcher.submit(fd, { method: "post", action: "/app/feedback" });
-  }
-
   return (
     <>
       {/* Toast notification */}
@@ -531,8 +520,8 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        {/* Form - using React Router's Form for proper embedded context handling */}
+        <Form method="post" action="/app/feedback" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           {/* Message */}
           <div>
             <label
@@ -543,6 +532,7 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
             </label>
             <textarea
               id="feedback-message"
+              name="message"
               ref={textareaRef}
               value={message}
               onChange={(e) => setMessage(e.target.value)}
@@ -595,6 +585,7 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
             </label>
             <input
               id="feedback-email"
+              name="email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -692,7 +683,7 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
               {isSubmitting ? "Sending…" : "Send Feedback"}
             </button>
           </div>
-        </form>
+        </Form>
       </div>
     </>
   );
