@@ -72,33 +72,6 @@ function getReviewTrigger(
   return false;
 }
 
-// ─── Action (handles review banner button clicks) ─────────────────────────────
-
-export const action = async ({ request }: ActionFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
-  const shop = session.shop;
-
-  const formData = await request.formData();
-  const intent = formData.get("intent") as string;
-
-  if (intent === "review_dismissed") {
-    await prisma.shopSettings.update({
-      where: { shop },
-      data: {
-        reviewDismissedCount: { increment: 1 },
-        reviewRequestedAt: new Date(), // reset 30-day cooldown on dismiss too
-      },
-    });
-  } else if (intent === "review_completed") {
-    await prisma.shopSettings.update({
-      where: { shop },
-      data: { hasReviewed: true },
-    });
-  }
-
-  return null;
-};
-
 // ─── Action ───────────────────────────────────────────────────────────────────
 
 export const action = async ({ request }: ActionFunctionArgs) => {
