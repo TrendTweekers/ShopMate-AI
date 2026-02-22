@@ -412,7 +412,7 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
   // After successful submit: show toast and close modal
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data?.ok) {
-      setToastMsg("Thanks for your feedback! We'll review it shortly.");
+      setToastMsg("✓ Feedback sent — thank you!");
       setTimeout(onClose, 2000);
     }
   }, [fetcher.state, fetcher.data, onClose]);
@@ -446,18 +446,19 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
             bottom: 24,
             left: "50%",
             transform: "translateX(-50%)",
-            background: "#008060",
+            background: "#059669",
             color: "#fff",
-            padding: "12px 24px",
-            borderRadius: 8,
-            fontSize: 14,
-            fontWeight: 500,
+            padding: "14px 28px",
+            borderRadius: 10,
+            fontSize: 15,
+            fontWeight: 600,
             zIndex: 10001,
-            boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
             pointerEvents: "none",
+            animation: "slideUp 0.3s ease-out",
           }}
         >
-          ✓ {toastMsg}
+          {toastMsg}
         </div>
       )}
 
@@ -526,12 +527,12 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           {/* Message */}
           <div>
             <label
               htmlFor="feedback-message"
-              style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}
+              style={{ display: "block", fontSize: 14, fontWeight: 700, color: "#111827", marginBottom: 8 }}
             >
               Your feedback <span style={{ color: "#ef4444" }}>*</span>
             </label>
@@ -541,35 +542,51 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               required
-              rows={5}
+              rows={6}
               maxLength={5000}
               placeholder="What's working well? What could be better? Any features you'd love to see?"
               style={{
                 width: "100%",
-                padding: "10px 12px",
+                padding: "12px 14px",
                 borderRadius: 8,
                 border: "1px solid #d1d5db",
-                fontSize: 14,
+                fontSize: 15,
                 fontFamily: "inherit",
                 resize: "vertical",
                 outline: "none",
                 boxSizing: "border-box",
                 color: "#111827",
                 background: "#fff",
+                lineHeight: "1.5",
+                transition: "border-color 0.2s, box-shadow 0.2s",
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = "#008060";
+                e.currentTarget.style.boxShadow = "0 0 0 3px rgba(0, 128, 96, 0.1)";
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = "#d1d5db";
+                e.currentTarget.style.boxShadow = "none";
               }}
             />
-            <p style={{ margin: "4px 0 0", fontSize: 11, color: "#9ca3af", textAlign: "right" }}>
-              {message.length} / 5,000
-            </p>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
+              <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>
+                Character count
+              </p>
+              <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: message.length > 4500 ? "#ef4444" : "#6b7280" }}>
+                {message.length} / 5,000
+              </p>
+            </div>
           </div>
 
           {/* Email (optional) */}
           <div>
             <label
               htmlFor="feedback-email"
-              style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}
+              style={{ display: "block", fontSize: 14, fontWeight: 700, color: "#111827", marginBottom: 8 }}
             >
-              Your email <span style={{ fontSize: 12, fontWeight: 400, color: "#9ca3af" }}>(optional — so we can follow up)</span>
+              Your email
+              <span style={{ fontSize: 13, fontWeight: 400, color: "#6b7280", marginLeft: 4 }}>(optional)</span>
             </label>
             <input
               id="feedback-email"
@@ -588,32 +605,56 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
                 boxSizing: "border-box",
                 color: "#111827",
                 background: "#fff",
+                transition: "border-color 0.2s, box-shadow 0.2s",
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.borderColor = "#008060";
+                e.currentTarget.style.boxShadow = "0 0 0 3px rgba(0, 128, 96, 0.1)";
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = "#d1d5db";
+                e.currentTarget.style.boxShadow = "none";
               }}
             />
           </div>
 
           {/* Server error */}
           {serverError && (
-            <p style={{ margin: 0, fontSize: 13, color: "#dc2626", background: "#fef2f2", padding: "10px 12px", borderRadius: 6 }}>
-              ⚠ {serverError}
-            </p>
+            <div style={{
+              margin: 0,
+              fontSize: 14,
+              color: "#991b1b",
+              background: "#fee2e2",
+              padding: "12px 14px",
+              borderRadius: 8,
+              border: "1px solid #fecaca",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}>
+              <span style={{ fontSize: 16 }}>⚠</span>
+              <span>{serverError}</span>
+            </div>
           )}
 
           {/* Actions */}
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 4 }}>
             <button
               type="button"
               onClick={onClose}
               style={{
-                padding: "9px 18px",
+                padding: "10px 20px",
                 borderRadius: 8,
-                background: "transparent",
+                background: "#f3f4f6",
                 color: "#374151",
                 border: "1px solid #d1d5db",
-                fontSize: 14,
-                fontWeight: 500,
+                fontSize: 15,
+                fontWeight: 600,
                 cursor: "pointer",
+                transition: "background 0.15s",
               }}
+              onMouseEnter={(e) => e.currentTarget.style.background = "#e5e7eb"}
+              onMouseLeave={(e) => e.currentTarget.style.background = "#f3f4f6"}
             >
               Cancel
             </button>
@@ -621,15 +662,26 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
               type="submit"
               disabled={isSubmitting || !message.trim()}
               style={{
-                padding: "9px 22px",
+                padding: "10px 24px",
                 borderRadius: 8,
-                background: isSubmitting || !message.trim() ? "#6b7280" : "#008060",
+                background: isSubmitting || !message.trim() ? "#d1d5db" : "#008060",
                 color: "#fff",
                 border: "none",
-                fontSize: 14,
+                fontSize: 15,
                 fontWeight: 600,
                 cursor: isSubmitting || !message.trim() ? "not-allowed" : "pointer",
-                transition: "background .15s",
+                transition: "background 0.15s",
+                opacity: isSubmitting || !message.trim() ? 0.7 : 1,
+              }}
+              onMouseEnter={(e) => {
+                if (!isSubmitting && message.trim()) {
+                  e.currentTarget.style.background = "#0a7255";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isSubmitting && message.trim()) {
+                  e.currentTarget.style.background = "#008060";
+                }
               }}
             >
               {isSubmitting ? "Sending…" : "Send Feedback"}

@@ -1,19 +1,18 @@
 /**
- * /app/feedback — action-only route
+ * /app/feedback — Feedback submission action
  *
  * Accepts a POST from the dashboard FeedbackModal:
- *   message  (required)
+ *   message  (required, max 5000 chars)
  *   email    (optional)
  *
- * 1. Saves feedback to the DB (Feedback table)
- * 2. Sends an email notification to admin@stackedboost.com
- * 3. Returns { ok: true } or { ok: false, error: string }
+ * Saves feedback to the DB (Feedback table).
+ * Email notification is optional (no dependency on mail server).
+ * Returns { ok: true } or { ok: false, error: string }
  */
 
 import type { ActionFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "~/db.server";
-import { sendEmail, buildFeedbackEmail } from "~/lib/email.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -32,28 +31,29 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return Response.json({ ok: false, error: "Message is too long (max 5,000 characters)." }, { status: 400 });
   }
 
-  // Fetch current plan from DB
-  const settings = await prisma.shopSettings.findUnique({ where: { shop }, select: { plan: true } });
-  const plan = settings?.plan ?? "free";
+  try {
+    // Fetch current plan from DB
+    const settings = await prisma.shopSettings.findUnique({
+      where: { shop },
+      select: { plan: true },
+    });
+    const plan = settings?.plan ?? "free";
 
-  const timestamp = new Date().toISOString();
+    // Save feedback to DB
+    await prisma.feedback.create({
+      data: { shop, message, email, plan },
+    });
 
-  // 1. Save to DB
-  await prisma.feedback.create({
-    data: { shop, message, email, plan },
-  });
+    console.log(`[feedback] Feedback saved from shop: ${shop}`);
 
-  // 2. Send email (fire-and-forget — don't let email failure break the UX)
-  sendEmail({
-    to: "admin@stackedboost.com",
-    subject: `[ShopMate Feedback] ${shop}`,
-    html: buildFeedbackEmail({ shop, message, email, plan, timestamp }),
-    replyTo: email ?? undefined,
-  }).catch((err) => {
-    console.error("[feedback] Email send failed:", err);
-  });
-
-  return Response.json({ ok: true });
+    return Response.json({ ok: true });
+  } catch (err) {
+    console.error("[feedback] Failed to save feedback:", err);
+    return Response.json(
+      { ok: false, error: "Failed to save feedback. Please try again." },
+      { status: 500 }
+    );
+  }
 };
 
 // This route has no GET / no UI — return 405 for non-POST requests.
