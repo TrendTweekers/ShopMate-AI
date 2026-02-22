@@ -22,6 +22,18 @@
   const API_BASE = cfg.apiBase || "";
   const PRIMARY = cfg.primaryColor || "#008060";
   const POSITION = cfg.position || "bottom-right";
+
+  // Derive a slightly darker accent from PRIMARY for gradient effects.
+  // Works by parsing the hex and reducing each channel by ~15%.
+  function darkenHex(hex, amount) {
+    var h = hex.replace("#", "");
+    if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+    var r = Math.max(0, parseInt(h.slice(0,2),16) - amount);
+    var g = Math.max(0, parseInt(h.slice(2,4),16) - amount);
+    var b = Math.max(0, parseInt(h.slice(4,6),16) - amount);
+    return "#" + [r,g,b].map(function(x){ return x.toString(16).padStart(2,"0"); }).join("");
+  }
+  var ACCENT = darkenHex(PRIMARY, 24); // ~15% darker for gradient end-stop
   const BOT_NAME = cfg.botName || "ShopMate";
   const GREETING = cfg.greeting || "Hi! \uD83D\uDC4B How can I help you today?";
   const SESSION_KEY = "shopmate_conv_id";
@@ -72,18 +84,22 @@
       width: 56px;
       height: 56px;
       border-radius: 50%;
-      background: ${PRIMARY};
+      background: linear-gradient(135deg, ${PRIMARY} 0%, ${ACCENT} 100%);
       color: #fff;
       border: none;
       cursor: pointer;
-      box-shadow: 0 4px 16px rgba(0,0,0,.22);
+      box-shadow: 0 8px 32px rgba(0,0,0,.12);
       display: flex;
       align-items: center;
       justify-content: center;
       z-index: 2147483646;
-      transition: transform .15s ease;
+      transition: transform .3s cubic-bezier(0.4, 0, 0.2, 1),
+                  box-shadow .3s cubic-bezier(0.4, 0, 0.2, 1);
     }
-    #shopmate-widget-bubble:hover { transform: scale(1.07); }
+    #shopmate-widget-bubble:hover {
+      transform: scale(1.07);
+      box-shadow: 0 12px 40px rgba(0,0,0,.18);
+    }
     #shopmate-widget-bubble svg { width: 26px; height: 26px; }
 
     #shopmate-widget-panel {
@@ -92,27 +108,28 @@
       bottom: 88px;
       width: 340px;
       height: 500px;
-      border-radius: 16px;
+      border-radius: 20px;
       background: #fff;
-      box-shadow: 0 8px 40px rgba(0,0,0,.18);
-      border: 1px solid #e5e7eb;
+      box-shadow: 0 8px 32px rgba(0,0,0,.12);
+      border: 1px solid rgba(0,0,0,.06);
       display: flex;
       flex-direction: column;
       overflow: hidden;
       z-index: 2147483645;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       font-size: 14px;
-      transition: opacity .2s ease, transform .2s ease;
+      transition: opacity .3s cubic-bezier(0.4, 0, 0.2, 1),
+                  transform .3s cubic-bezier(0.4, 0, 0.2, 1);
     }
     #shopmate-widget-panel.sm-hidden {
       opacity: 0;
       pointer-events: none;
-      transform: translateY(12px) scale(.97);
+      transform: translateY(16px) scale(.96);
     }
 
     .sm-header {
-      background: ${PRIMARY};
-      padding: 12px 16px;
+      background: linear-gradient(135deg, ${PRIMARY} 0%, ${ACCENT} 100%);
+      padding: 14px 16px;
       display: flex;
       align-items: center;
       gap: 10px;
@@ -140,13 +157,23 @@
     .sm-msg-row.user { justify-content: flex-end; }
     .sm-bubble {
       max-width: 82%;
-      padding: 8px 12px;
-      border-radius: 14px;
-      line-height: 1.45;
+      padding: 9px 13px;
+      border-radius: 16px;
+      line-height: 1.5;
       word-break: break-word;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
-    .sm-bubble.bot  { background: #f3f4f6; color: #111827; border-bottom-left-radius: 4px; }
-    .sm-bubble.user { background: ${PRIMARY}; color: #fff; border-bottom-right-radius: 4px; }
+    .sm-bubble.bot  {
+      background: #f3f4f6;
+      color: #111827;
+      border-bottom-left-radius: 4px;
+    }
+    .sm-bubble.user {
+      background: linear-gradient(135deg, ${PRIMARY} 0%, ${ACCENT} 100%);
+      color: #fff;
+      border-bottom-right-radius: 4px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.12);
+    }
     .sm-bubble.error { background: #fee2e2; color: #b91c1c; }
 
     /* Quick-reply chips */
@@ -158,19 +185,26 @@
       flex-shrink: 0;
     }
     .sm-chip {
-      padding: 6px 12px;
+      padding: 6px 13px;
       border-radius: 999px;
       border: 1.5px solid ${PRIMARY};
       background: #fff;
       color: ${PRIMARY};
       font-size: 12px;
-      font-family: inherit;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       cursor: pointer;
       line-height: 1.3;
-      transition: background .12s, color .12s;
+      transition: background .3s cubic-bezier(0.4, 0, 0.2, 1),
+                  color .3s cubic-bezier(0.4, 0, 0.2, 1),
+                  box-shadow .3s cubic-bezier(0.4, 0, 0.2, 1);
       white-space: nowrap;
     }
-    .sm-chip:hover { background: ${PRIMARY}; color: #fff; }
+    .sm-chip:hover {
+      background: linear-gradient(135deg, ${PRIMARY} 0%, ${ACCENT} 100%);
+      color: #fff;
+      border-color: transparent;
+      box-shadow: 0 2px 8px rgba(0,0,0,.12);
+    }
 
     /* Formatted bot reply paragraphs & lists */
     .sm-bubble .sm-para {
@@ -221,22 +255,37 @@
 
     .sm-input-row {
       display: flex; gap: 8px; padding: 10px 12px;
-      border-top: 1px solid #e5e7eb; flex-shrink: 0; background: #fff;
+      border-top: 1px solid rgba(0,0,0,.05); flex-shrink: 0; background: #fff;
     }
     .sm-input {
-      flex: 1; border: 1px solid #d1d5db; border-radius: 10px;
-      padding: 8px 12px; font-size: 13px; outline: none;
-      font-family: inherit;
-      transition: border-color .15s;
+      flex: 1; border: 1px solid #e5e7eb; border-radius: 12px;
+      padding: 9px 13px; font-size: 13px; outline: none;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      transition: border-color .3s cubic-bezier(0.4, 0, 0.2, 1),
+                  box-shadow .3s cubic-bezier(0.4, 0, 0.2, 1);
+      background: #f9fafb;
     }
-    .sm-input:focus { border-color: ${PRIMARY}; }
+    .sm-input:focus {
+      border-color: ${PRIMARY};
+      background: #fff;
+      box-shadow: 0 0 0 3px ${PRIMARY}22;
+    }
     .sm-send {
-      width: 36px; height: 36px; border-radius: 10px;
-      background: ${PRIMARY}; color: #fff; border: none;
+      width: 38px; height: 38px; border-radius: 12px;
+      background: linear-gradient(135deg, ${PRIMARY} 0%, ${ACCENT} 100%);
+      color: #fff; border: none;
       cursor: pointer; display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0; transition: opacity .15s;
+      flex-shrink: 0;
+      transition: opacity .3s cubic-bezier(0.4, 0, 0.2, 1),
+                  transform .3s cubic-bezier(0.4, 0, 0.2, 1),
+                  box-shadow .3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 2px 8px rgba(0,0,0,.12);
     }
-    .sm-send:disabled { opacity: .45; cursor: default; }
+    .sm-send:not(:disabled):hover {
+      transform: scale(1.05);
+      box-shadow: 0 4px 12px rgba(0,0,0,.18);
+    }
+    .sm-send:disabled { opacity: .4; cursor: default; box-shadow: none; }
     .sm-send svg { width: 16px; height: 16px; }
 
     /* Exit-intent / idle nudge */
@@ -292,13 +341,13 @@
     }
     /* Attention pulse on the bubble when nudge is visible */
     #shopmate-widget-bubble.sm-pulse {
-      box-shadow: 0 4px 16px rgba(0,0,0,.22), 0 0 0 0 ${PRIMARY};
-      animation: sm-pulse-ring 1.6s ease-out infinite;
+      box-shadow: 0 8px 32px rgba(0,0,0,.12), 0 0 0 0 ${PRIMARY};
+      animation: sm-pulse-ring 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
     }
     @keyframes sm-pulse-ring {
-      0%   { box-shadow: 0 4px 16px rgba(0,0,0,.22), 0 0 0 0 ${PRIMARY}88; }
-      70%  { box-shadow: 0 4px 16px rgba(0,0,0,.22), 0 0 0 12px ${PRIMARY}00; }
-      100% { box-shadow: 0 4px 16px rgba(0,0,0,.22), 0 0 0 0 ${PRIMARY}00; }
+      0%   { box-shadow: 0 8px 32px rgba(0,0,0,.12), 0 0 0 0 ${PRIMARY}88; }
+      70%  { box-shadow: 0 8px 32px rgba(0,0,0,.12), 0 0 0 14px ${PRIMARY}00; }
+      100% { box-shadow: 0 8px 32px rgba(0,0,0,.12), 0 0 0 0 ${PRIMARY}00; }
     }
   `;
   document.head.appendChild(style);
