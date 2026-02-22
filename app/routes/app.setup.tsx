@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useFetcher, useLoaderData, useNavigate } from "react-router";
-import { Check, ArrowRight, ArrowLeft, Bot, Package, Sparkles, BookOpen, Zap, AlertCircle } from "lucide-react";
+import { Check, ArrowRight, ArrowLeft, Bot, Package, Sparkles, BookOpen, Zap } from "lucide-react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -223,19 +223,21 @@ export default function SetupWizard() {
             ) : (
               <div
                 style={{
-                  display: "flex", alignItems: "flex-start", gap: 10,
-                  padding: "12px 14px", borderRadius: 8,
-                  background: "#fff7ed", border: "1px solid #f97316",
+                  display: "flex", alignItems: "flex-start", gap: 12,
+                  padding: "14px 16px", borderRadius: 10,
+                  background: "#f0fdf4", border: "1px solid #86efac",
                 }}
               >
-                <AlertCircle size={16} color="#c2410c" style={{ flexShrink: 0, marginTop: 1 }} />
+                <BookOpen size={18} color="#15803d" style={{ flexShrink: 0, marginTop: 1 }} />
                 <div>
-                  <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#c2410c" }}>
-                    No policies found
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#15803d" }}>
+                    You're almost there!
                   </p>
-                  <p style={{ margin: "4px 0 0", fontSize: 12, color: "#92400e" }}>
-                    We couldn't find store policies to import. Add them in{" "}
-                    <strong>Shopify Admin → Settings → Policies</strong>, then visit the Knowledge Base page to import them.
+                  <p style={{ margin: "5px 0 0", fontSize: 12, color: "#166534", lineHeight: 1.6 }}>
+                    Policies haven't been imported yet — that's totally fine at this stage.
+                    Once you finish setup, head to the{" "}
+                    <strong>Knowledge Base</strong> page to pull in your store's policies in one click.
+                    You can also add custom FAQs and answers any time.
                   </p>
                 </div>
               </div>
