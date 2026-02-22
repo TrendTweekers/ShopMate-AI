@@ -1,30 +1,23 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { Outlet, useLoaderData } from "react-router";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
+import { NavMenu } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
-  return { apiKey: process.env.SHOPIFY_API_KEY || "" };
+  await authenticate.admin(request);
+  return {
+    apiKey: process.env.SHOPIFY_API_KEY || "",
+  };
 };
-
-declare global {
-  namespace JSX {
-    interface IntrinsicElements {
-      "ui-nav-menu": any;
-      "ui-nav-menu-item": any;
-    }
-  }
-}
 
 export default function AppLayout() {
   const { apiKey } = useLoaderData<typeof loader>();
 
   return (
     <AppProvider embedded apiKey={apiKey}>
-      {/* Using Polaris web component for better App Bridge compatibility */}
-      <ui-nav-menu>
+      <NavMenu>
         <a href="/app" rel="home">Dashboard</a>
         <a href="/app/setup">Setup Wizard</a>
         <a href="/app/order-tracking">Order Tracking</a>
@@ -34,7 +27,7 @@ export default function AppLayout() {
         <a href="/app/conversations">Conversations</a>
         <a href="/app/widget-preview">Widget Preview</a>
         <a href="/app/customize">Customize</a>
-      </ui-nav-menu>
+      </NavMenu>
       <Outlet />
     </AppProvider>
   );
