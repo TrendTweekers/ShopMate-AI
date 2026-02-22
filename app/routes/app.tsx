@@ -6,9 +6,11 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
+
   return {
     apiKey: process.env.SHOPIFY_API_KEY || "",
+    shop: session.shop,
   };
 };
 
@@ -18,7 +20,9 @@ export default function AppLayout() {
   return (
     <AppProvider embedded apiKey={apiKey}>
       <NavMenu>
-        <a href="/app" rel="home">Dashboard</a>
+        <a href="/app" rel="home">
+          Dashboard
+        </a>
         <a href="/app/setup">Setup Wizard</a>
         <a href="/app/order-tracking">Order Tracking</a>
         <a href="/app/recommendations">Recommendations</a>
