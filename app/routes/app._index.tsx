@@ -1,5 +1,5 @@
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useFetcher, useLoaderData, useNavigate } from "react-router";
+import { useFetcher, useLoaderData, useNavigate, useRouteError } from "react-router";
 import { MessageSquare, ShieldCheck, Clock, TrendingUp, Zap, DollarSign } from "lucide-react";
 import KpiCard from "~/components/admin/KpiCard";
 import {
@@ -745,3 +745,8 @@ export default function Dashboard() {
 export const headers: HeadersFunction = (headersArgs) => {
   return boundary.headers(headersArgs);
 };
+
+export function ErrorBoundary() {
+  const error = useRouteError();
+  return boundary.error(error);
+}
