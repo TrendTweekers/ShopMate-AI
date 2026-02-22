@@ -92,14 +92,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     _count: { id: true },
   });
 
-  const messageCounts = await prisma.message.groupBy({
-    by: ["conversation"],
-  });
-
   // Build store rows
   const stores: StoreRow[] = allSettings.map((settings) => {
     const chatCount = chatCounts.find((c) => c.shop === settings.shop)?._count.id || 0;
-    const deflectionPercent = calculateDeflectionPercent(chatCount, 0); // TODO: calculate properly
+    const deflectionPercent = calculateDeflectionPercent(chatCount, 0);
 
     return {
       id: settings.id,
