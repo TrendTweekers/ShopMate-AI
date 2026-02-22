@@ -117,24 +117,34 @@ export async function importStorePolicies(
     const title = TITLE_MAP[policy.type] ?? policy.title;
 
     try {
-      await prisma.knowledgeBase.upsert({
-        where: { shop_type: { shop, type } },
-        create: {
-          shop,
-          title,
-          content: plainText,
-          type,
-          status: "active",
-          source: "shopify_import",
-        },
-        update: {
-          // Always refresh content from Shopify so edits there are reflected
-          title,
-          content: plainText,
-          status: "active",
-          source: "shopify_import",
-        },
+      // Use findFirst + update/create since the DB unique constraint was
+      // removed to allow multiple custom entries per shop.
+      const existing = await prisma.knowledgeBase.findFirst({
+        where: { shop, type },
       });
+
+      if (existing) {
+        await prisma.knowledgeBase.update({
+          where: { id: existing.id },
+          data: {
+            title,
+            content: plainText,
+            status: "active",
+            source: "shopify_import",
+          },
+        });
+      } else {
+        await prisma.knowledgeBase.create({
+          data: {
+            shop,
+            title,
+            content: plainText,
+            type,
+            status: "active",
+            source: "shopify_import",
+          },
+        });
+      }
 
       result.imported++;
       result.policies.push({ title, type });

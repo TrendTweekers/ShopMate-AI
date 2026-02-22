@@ -68,7 +68,7 @@ model KnowledgeBase {
   updatedAt DateTime @updatedAt
 
   @@index([shop])
-  @@unique([shop, type])                   // one row per policy type per shop
+  @@index([shop, type])                    // policy deduplication done at app layer via upsert
 }
 
 // Revenue attribution — tracks which product card clicks in chat

@@ -69,18 +69,41 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   // ── Re-import from Shopify ────────────────────────────────────────────────
   if (intent === "import_policies") {
-    const result = await importStorePolicies(shop, admin);
-    return {
-      ok: true,
-      message:
-        result.imported > 0
-          ? `✓ Imported ${result.imported} polic${result.imported === 1 ? "y" : "ies"} from your store.`
-          : result.skipped > 0
-          ? "⚠️ No policies had content. Add them in Shopify Settings → Policies first."
-          : "No policies found in your Shopify store.",
-      imported: result.imported,
-      errors: result.errors,
-    };
+    console.log(`[KB] Import triggered by merchant for shop: ${shop}`);
+    try {
+      const result = await importStorePolicies(shop, admin);
+      console.log(`[KB] Import result: imported=${result.imported} skipped=${result.skipped} errors=${JSON.stringify(result.errors)}`);
+
+      if (result.errors.length > 0) {
+        return {
+          ok: false,
+          message: `Import encountered errors: ${result.errors.join("; ")}`,
+          imported: result.imported,
+          errors: result.errors,
+        };
+      }
+
+      return {
+        ok: true,
+        message:
+          result.imported > 0
+            ? `✓ Imported ${result.imported} polic${result.imported === 1 ? "y" : "ies"} from your store.`
+            : result.skipped > 0
+            ? "⚠️ Your Shopify policies exist but have no content yet. Go to Shopify Settings → Policies to add content, then re-import."
+            : "⚠️ No policies found in your Shopify store. Set them up at Shopify Settings → Policies first.",
+        imported: result.imported,
+        errors: result.errors,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[KB] Import failed with exception:`, err);
+      return {
+        ok: false,
+        message: `Import failed: ${msg}`,
+        imported: 0,
+        errors: [msg],
+      };
+    }
   }
 
   // ── Add new entry ─────────────────────────────────────────────────────────
