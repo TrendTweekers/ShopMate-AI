@@ -438,6 +438,7 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
 
       const feedbackUrl = "/app/feedback";
       console.log("[feedback-modal] Posting to:", feedbackUrl);
+      console.log("[feedback-modal] FormData keys:", Array.from(formData.keys()));
 
       const response = await fetch(feedbackUrl, {
         method: "POST",
@@ -445,7 +446,21 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
       });
 
       console.log("[feedback-modal] Response status:", response.status);
-      const data = await response.json();
+      console.log("[feedback-modal] Response ok:", response.ok);
+
+      const responseText = await response.text();
+      console.log("[feedback-modal] Response text:", responseText);
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        console.error("[feedback-modal] Failed to parse JSON:", responseText);
+        setLocalError("Invalid response from server");
+        setIsSubmitting(false);
+        return;
+      }
+
       console.log("[feedback-modal] Response data:", data);
 
       if (data.ok) {
@@ -458,6 +473,8 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
       }
     } catch (error) {
       console.error("[feedback-modal] Fetch error:", error);
+      console.error("[feedback-modal] Error message:", error instanceof Error ? error.message : String(error));
+      console.error("[feedback-modal] Error stack:", error instanceof Error ? error.stack : "No stack");
       setLocalError("Network error - please try again");
     } finally {
       setIsSubmitting(false);
