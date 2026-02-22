@@ -34,9 +34,11 @@ api_version = "2026-01"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-# read_orders: needed for order tracking lookups via GraphQL
-# read_products: needed for product recommendation queries via GraphQL
-scopes = "read_orders,read_products"
+# read_orders:         needed for order tracking lookups via GraphQL
+# read_products:       needed for product recommendation queries via GraphQL
+# read_legal_policies: needed for shop { privacyPolicy, refundPolicy, shippingPolicy,
+#                      termsOfService, subscriptionPolicy } — required for Knowledge Base import
+scopes = "read_orders,read_products,read_legal_policies"
 optional_scopes = [ ]
 use_legacy_install_flow = false
 

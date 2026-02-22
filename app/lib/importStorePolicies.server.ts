@@ -5,6 +5,13 @@
  * them into the KnowledgeBase table. Called on app install (afterAuth hook)
  * and can be re-triggered manually from the Knowledge Base page.
  *
+ * REQUIRED SCOPE
+ * --------------
+ * read_legal_policies — must be present in shopify.app.toml [access_scopes]
+ * and the merchant must have re-installed / re-authorised the app after the
+ * scope was added.  Without it Shopify returns:
+ *   "Field 'privacyPolicy' doesn't exist on type 'Shop'"
+ *
  * API HISTORY
  * -----------
  * BROKEN (pre-2023):  query { shopPolicies { type title body } }
@@ -12,11 +19,11 @@
  *   → Removed from the API; causes "Field 'shopPolicies' doesn't exist on
  *     type 'QueryRoot'" on API version 2023-01+.
  *
- * CURRENT (2023-01+):  query { shop { privacyPolicy { body url }  ... } }
+ * CURRENT (2023-01+):  query { shop { privacyPolicy { title body url }  ... } }
  *   → Each policy is a named field on the Shop object.
  *   → Fields: privacyPolicy, refundPolicy, shippingPolicy,
  *             termsOfService, subscriptionPolicy.
- *   → Each returns ShopPolicy { body: String, url: String } or null.
+ *   → Each returns ShopPolicy { title: String, body: String, url: String } or null.
  *   → No "type" discriminator — we use the field name instead.
  */
 
@@ -28,11 +35,11 @@ import prisma from "~/db.server";
 const SHOP_POLICIES_QUERY = `#graphql
   query GetShopPolicies {
     shop {
-      privacyPolicy     { body url }
-      refundPolicy      { body url }
-      shippingPolicy    { body url }
-      termsOfService    { body url }
-      subscriptionPolicy { body url }
+      privacyPolicy      { title body url }
+      refundPolicy       { title body url }
+      shippingPolicy     { title body url }
+      termsOfService     { title body url }
+      subscriptionPolicy { title body url }
     }
   }
 `;
@@ -55,6 +62,7 @@ const POLICY_DEFS: Array<{
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface PolicyNode {
+  title?: string | null;
   body?: string | null;
   url?: string | null;
 }
@@ -114,16 +122,39 @@ export async function importStorePolicies(
     const res = await admin.graphql(SHOP_POLICIES_QUERY);
     const json = (await res.json()) as GraphQLResponse;
 
-    // Surface GraphQL-level errors (e.g. wrong API version, scope issues)
+    // Surface GraphQL-level errors (e.g. missing scope, wrong API version)
     if (json.errors?.length) {
       const msgs = json.errors.map((e) => e.message);
       console.error(`[KnowledgeBase] GraphQL errors for ${shop}:`, msgs);
-      result.errors.push(...msgs);
+
+      // Detect the specific scope-missing error for a clear actionable message
+      const isScopeMissing = msgs.some(
+        (m) =>
+          m.includes("privacyPolicy") ||
+          m.includes("refundPolicy") ||
+          m.includes("shippingPolicy") ||
+          m.includes("termsOfService") ||
+          m.includes("subscriptionPolicy") ||
+          m.toLowerCase().includes("doesn't exist on type") ||
+          m.toLowerCase().includes("access denied") ||
+          m.toLowerCase().includes("unauthorized"),
+      );
+
+      if (isScopeMissing) {
+        result.errors.push(
+          "SCOPE_MISSING: Policies not available — the read_legal_policies scope is required. " +
+            "Re-install or re-authorise the app from the Shopify Partners Dashboard to grant access.",
+        );
+      } else {
+        result.errors.push(...msgs);
+      }
       return result;
     }
 
     if (!json.data?.shop) {
-      result.errors.push("Shopify returned no shop data. Check API version and read_content scope.");
+      result.errors.push(
+        "Shopify returned no shop data. Ensure the read_legal_policies scope is granted and re-install the app if needed.",
+      );
       return result;
     }
 
@@ -149,16 +180,19 @@ export async function importStorePolicies(
       continue;
     }
 
+    // Prefer the title returned by Shopify; fall back to our display title
+    const title = (policy.title ?? "").trim() || def.title;
+
     const rawBody = policy.body ?? "";
     const plainText = stripHtml(rawBody).trim();
 
     // Policy exists but has no content — skip with informative log
     if (!plainText) {
       console.log(`[KnowledgeBase] ${def.field} exists but body is empty — skipping`);
-      // If there's a URL, use it as minimal content so we store something useful
+      // If there's a URL, store that as minimal content so we have something useful
       if (policy.url) {
-        const urlContent = `${def.title}\n\nFull policy: ${policy.url}`;
-        await upsertPolicy(shop, def.type, def.title, urlContent, result);
+        const urlContent = `${title}\n\nFull policy: ${policy.url}`;
+        await upsertPolicy(shop, def.type, title, urlContent, result);
       } else {
         result.skipped++;
       }
@@ -170,7 +204,7 @@ export async function importStorePolicies(
       ? `${plainText}\n\nFull policy: ${policy.url}`
       : plainText;
 
-    await upsertPolicy(shop, def.type, def.title, content, result);
+    await upsertPolicy(shop, def.type, title, content, result);
   }
 
   console.log(

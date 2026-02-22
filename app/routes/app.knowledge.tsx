@@ -11,7 +11,7 @@
  */
 import { useState } from "react";
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useFetcher, useLoaderData } from "react-router";
+import { useFetcher, useLoaderData, useRouteError } from "react-router";
 import { BookOpen, Plus, Pencil, Trash2, RefreshCw, CheckCircle, AlertCircle } from "lucide-react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -75,16 +75,26 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       console.log(`[KB] Import result: imported=${result.imported} skipped=${result.skipped} errors=${JSON.stringify(result.errors)}`);
 
       if (result.errors.length > 0) {
+        // Detect the specific scope-missing sentinel set by importStorePolicies
+        const isScopeMissing = result.errors.some((e) => e.startsWith("SCOPE_MISSING:"));
+        const cleanErrors = result.errors.map((e) =>
+          e.startsWith("SCOPE_MISSING:") ? e.replace("SCOPE_MISSING:", "").trim() : e,
+        );
+
         return {
           ok: false,
-          message: `Import encountered errors: ${result.errors.join("; ")}`,
+          scopeMissing: isScopeMissing,
+          message: isScopeMissing
+            ? "Policies not available — check scopes or store settings"
+            : `Import encountered errors: ${cleanErrors.join("; ")}`,
           imported: result.imported,
-          errors: result.errors,
+          errors: cleanErrors,
         };
       }
 
       return {
         ok: true,
+        scopeMissing: false,
         message:
           result.imported > 0
             ? `✓ Imported ${result.imported} polic${result.imported === 1 ? "y" : "ies"} from your store.`
@@ -99,6 +109,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       console.error(`[KB] Import failed with exception:`, err);
       return {
         ok: false,
+        scopeMissing: false,
         message: `Import failed: ${msg}`,
         imported: 0,
         errors: [msg],
@@ -158,6 +169,7 @@ export default function KnowledgePage() {
   const { entries, hasImported } = useLoaderData<typeof loader>();
   const fetcher = useFetcher<{
     ok: boolean;
+    scopeMissing?: boolean;
     message?: string;
     imported?: number;
     errors?: string[];
@@ -243,15 +255,42 @@ export default function KnowledgePage() {
       {lastMessage && (
         <div
           style={{
-            display: "flex", alignItems: "center", gap: 8,
-            padding: "10px 14px", borderRadius: 8,
-            background: lastOk ? "hsl(160 100% 96%)" : "#fff7ed",
-            border: `1px solid ${lastOk ? "#008060" : "#f97316"}`,
-            fontSize: 13, color: lastOk ? "#004c3f" : "#c2410c",
+            display: "flex", alignItems: "flex-start", gap: 10,
+            padding: "12px 16px", borderRadius: 10,
+            background: lastOk ? "hsl(160 100% 96%)" : fetcher.data?.scopeMissing ? "#fef2f2" : "#fff7ed",
+            border: `1px solid ${lastOk ? "#008060" : fetcher.data?.scopeMissing ? "#fca5a5" : "#f97316"}`,
+            fontSize: 13, color: lastOk ? "#004c3f" : fetcher.data?.scopeMissing ? "#b91c1c" : "#c2410c",
           }}
         >
-          {lastOk ? <CheckCircle size={14} /> : <AlertCircle size={14} />}
-          {lastMessage}
+          {lastOk
+            ? <CheckCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+            : <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} />}
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 600, marginBottom: fetcher.data?.scopeMissing ? 4 : 0 }}>
+              {lastMessage}
+            </div>
+            {fetcher.data?.scopeMissing && (
+              <>
+                <div style={{ fontSize: 12, marginTop: 4, lineHeight: 1.6 }}>
+                  {fetcher.data.errors?.[0]}
+                </div>
+                <div style={{ fontSize: 12, marginTop: 6, padding: "8px 10px", background: "#fee2e2", borderRadius: 6, lineHeight: 1.7 }}>
+                  <strong>How to fix:</strong>
+                  <ol style={{ margin: "4px 0 0 16px", padding: 0 }}>
+                    <li>Go to <strong>Shopify Partners Dashboard → Your App → Configuration → Access Scopes</strong></li>
+                    <li>Add <code style={{ background: "#fca5a5", padding: "1px 4px", borderRadius: 3 }}>read_legal_policies</code> to the scopes list and save</li>
+                    <li>Reinstall the app on your store to grant the new scope</li>
+                    <li>Return here and click <strong>Import from Shopify</strong> again</li>
+                  </ol>
+                </div>
+              </>
+            )}
+            {!lastOk && !fetcher.data?.scopeMissing && fetcher.data?.errors && fetcher.data.errors.length > 1 && (
+              <ul style={{ margin: "4px 0 0 16px", padding: 0, fontSize: 12 }}>
+                {fetcher.data.errors.map((e: string, i: number) => <li key={i}>{e}</li>)}
+              </ul>
+            )}
+          </div>
         </div>
       )}
 
@@ -445,6 +484,11 @@ export default function KnowledgePage() {
       )}
     </div>
   );
+}
+
+export function ErrorBoundary() {
+  const error = useRouteError();
+  return boundary.error(error);
 }
 
 export const headers: HeadersFunction = (headersArgs) => {
