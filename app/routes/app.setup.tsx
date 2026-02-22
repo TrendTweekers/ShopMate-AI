@@ -73,6 +73,15 @@ export default function SetupWizard() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
+      {/* Logo */}
+      <div style={{ display: "flex", justifyContent: "center", paddingBottom: 4 }}>
+        <img
+          src="/assets/shopmatelogo.png"
+          alt="ShopMate AI"
+          style={{ height: 40, width: "auto", objectFit: "contain" }}
+        />
+      </div>
+
       {/* Progress */}
       <div className="polaris-card">
         <div className="flex items-center justify-between">

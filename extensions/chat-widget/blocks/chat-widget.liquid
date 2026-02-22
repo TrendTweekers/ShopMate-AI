@@ -33,7 +33,9 @@
         if (!raw || !raw.trim()) return [];
         return raw.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
       })(),
-      exitIntent: {{ block.settings.exit_intent | json }}
+      exitIntent: {{ block.settings.exit_intent | json }},
+      // Logo URL served from Shopify CDN via the theme extension asset pipeline.
+      logoUrl: {{ 'shopmatelogo.png' | asset_url | json }}
     };
   </script>
   {{ 'chat-widget.js' | asset_url | script_tag }}

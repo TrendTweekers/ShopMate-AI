@@ -426,6 +426,15 @@ export default function Dashboard() {
   return (
     <div className="space-y-6 max-w-6xl">
 
+      {/* ── Logo header ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <img
+          src="/assets/shopmatelogo.png"
+          alt="ShopMate AI"
+          style={{ height: 36, width: "auto", objectFit: "contain" }}
+        />
+      </div>
+
       {/* ── Review banner — only visible when a trigger fires ── */}
       {reviewTrigger && (
         <ReviewBanner trigger={reviewTrigger} aiHandledChats={aiHandledChats} />

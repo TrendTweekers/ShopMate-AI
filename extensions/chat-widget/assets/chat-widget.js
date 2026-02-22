@@ -35,6 +35,8 @@
   }
   var ACCENT = darkenHex(PRIMARY, 24); // ~15% darker for gradient end-stop
   const BOT_NAME = cfg.botName || "ShopMate";
+  // Logo URL injected by chat-widget.liquid via {{ 'shopmatelogo.png' | asset_url | json }}
+  const LOGO_URL = cfg.logoUrl || "";
   const GREETING = cfg.greeting || "Hi! \uD83D\uDC4B How can I help you today?";
   const SESSION_KEY = "shopmate_conv_id";
   // Quick-reply chips shown below the greeting until the user sends their first message.
@@ -142,6 +144,15 @@
       display: flex; align-items: center; justify-content: center;
     }
     .sm-header-icon svg { width: 16px; height: 16px; }
+    /* Logo image shown in place of the icon when a logoUrl is available */
+    .sm-header-logo {
+      height: 28px;
+      width: auto;
+      object-fit: contain;
+      /* Invert to white since the header has a coloured gradient background */
+      filter: brightness(0) invert(1);
+      flex-shrink: 0;
+    }
     .sm-header-name { color: #fff; font-weight: 600; font-size: 14px; line-height: 1.2; }
     .sm-header-sub  { color: rgba(255,255,255,.7); font-size: 11px; }
 
@@ -711,8 +722,13 @@
     // Header
     var header = document.createElement("div");
     header.className = "sm-header";
+    // Show the ShopMate logo if a URL was injected by the Liquid template;
+    // fall back to the generic icon circle if not available.
+    var headerLeft = LOGO_URL
+      ? `<img src="${escHtml(LOGO_URL)}" alt="ShopMate AI" class="sm-header-logo" />`
+      : `<div class="sm-header-icon">${iconChat}</div>`;
     header.innerHTML = `
-      <div class="sm-header-icon">${iconChat}</div>
+      ${headerLeft}
       <div>
         <div class="sm-header-name">${escHtml(BOT_NAME)}</div>
         <div class="sm-header-sub">Always here to help</div>
