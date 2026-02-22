@@ -1,5 +1,5 @@
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useFetcher, useLoaderData, useNavigate, useRouteError, Form } from "react-router";
+import { useLoaderData, useNavigate, useRouteError } from "react-router";
 import { useState, useEffect, useRef } from "react";
 import { MessageSquare, ShieldCheck, Clock, TrendingUp, Zap, DollarSign, MessageCircle } from "lucide-react";
 import KpiCard from "~/components/admin/KpiCard";
@@ -400,25 +400,15 @@ function ReviewBanner({
 // ─── FeedbackModal component ──────────────────────────────────────────────────
 
 function FeedbackModal({ onClose }: { onClose: () => void }) {
-  const fetcher = useFetcher<{ ok: boolean; error?: string }>();
   const [message, setMessage] = useState("");
   const [email, setEmail]     = useState("");
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Focus textarea when modal opens
   useEffect(() => { textareaRef.current?.focus(); }, []);
-
-  // After successful submit: show toast and close modal
-  useEffect(() => {
-    console.log("[feedback-modal] Fetcher state:", { state: fetcher.state, data: fetcher.data });
-    if (fetcher.state === "idle" && fetcher.data?.ok) {
-      setToastMsg("✓ Feedback sent — thank you!");
-      setTimeout(onClose, 2000);
-    } else if (fetcher.state === "idle" && fetcher.data?.ok === false) {
-      console.log("[feedback-modal] Feedback submission failed:", fetcher.data.error);
-    }
-  }, [fetcher.state, fetcher.data, onClose]);
 
   // Close on Escape key
   useEffect(() => {
@@ -427,8 +417,52 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
 
-  const isSubmitting = fetcher.state !== "idle";
-  const serverError  = fetcher.data?.ok === false ? fetcher.data.error : null;
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    if (!message.trim()) {
+      setServerError("Message is required.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setServerError(null);
+
+    try {
+      console.log("[feedback-modal] Submitting feedback...");
+      const formData = new FormData();
+      formData.append("message", message);
+      if (email.trim()) {
+        formData.append("email", email);
+      }
+
+      const response = await fetch("/app/feedback", {
+        method: "POST",
+        body: formData,
+        headers: {
+          // Don't set Content-Type - browser will set it with boundary for FormData
+        },
+      });
+
+      console.log("[feedback-modal] Response status:", response.status);
+      const data = await response.json();
+      console.log("[feedback-modal] Response data:", data);
+
+      if (data.ok) {
+        setToastMsg("✓ Feedback sent — thank you!");
+        setMessage("");
+        setEmail("");
+        setTimeout(onClose, 2000);
+      } else {
+        setServerError(data.error || "Failed to save feedback. Please try again.");
+      }
+    } catch (err) {
+      console.error("[feedback-modal] Error:", err);
+      setServerError("Failed to save feedback. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <>
@@ -520,8 +554,8 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        {/* Form - using React Router's Form for proper embedded context handling */}
-        <Form method="post" action="/app/feedback" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        {/* Form - using direct fetch for embedded context compatibility */}
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           {/* Message */}
           <div>
             <label
@@ -683,7 +717,7 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
               {isSubmitting ? "Sending…" : "Send Feedback"}
             </button>
           </div>
-        </Form>
+        </form>
       </div>
     </>
   );

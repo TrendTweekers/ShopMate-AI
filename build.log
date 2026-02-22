@@ -1,0 +1,107 @@
+npm warn Unknown project config "shamefully-hoist". This will stop working in the next major version of npm.
+
+> build
+> prisma generate && react-router build
+
+Environment variables loaded from .env
+Prisma schema loaded from prisma\schema.prisma
+
+✔ Generated Prisma Client (v6.19.2) to .\node_modules\@prisma\client in 105ms
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+
+[36mvite v6.4.1 [32mbuilding for production...[36m[39m
+transforming...
+[32m✓[39m 3120 modules transformed.
+[33mGenerated an empty chunk: "webhooks.customers.data_request".[39m
+[33mGenerated an empty chunk: "webhooks.app.scopes_update".[39m
+[33mGenerated an empty chunk: "webhooks.customers.redact".[39m
+[33mGenerated an empty chunk: "webhooks.app.uninstalled".[39m
+[33mGenerated an empty chunk: "webhooks.app.installed".[39m
+[33mGenerated an empty chunk: "webhooks.orders.create".[39m
+[33mGenerated an empty chunk: "webhooks.shop.redact".[39m
+[33mGenerated an empty chunk: "webhooks.compliance".[39m
+[33mGenerated an empty chunk: "apps.shopmate".[39m
+[33mGenerated an empty chunk: "apps.shopmate.track".[39m
+[33mGenerated an empty chunk: "apps.shopmate.chat".[39m
+[33mGenerated an empty chunk: "api.chat".[39m
+[33mGenerated an empty chunk: "auth._".[39m
+[33mGenerated an empty chunk: "health".[39m
+rendering chunks...
+computing gzip size...
+[2mbuild/client/[22m[32m.vite/manifest.json                                 [39m[1m[2m 15.84 kB[22m[1m[22m[2m │ gzip:   1.90 kB[22m
+[2mbuild/client/[22m[35massets/route-CNPfFM0M.css                           [39m[1m[2m  0.76 kB[22m[1m[22m[2m │ gzip:   0.35 kB[22m
+[2mbuild/client/[22m[35massets/shopmate-ZKlFUyru.css                        [39m[1m[2m 68.39 kB[22m[1m[22m[2m │ gzip:  12.19 kB[22m
+[2mbuild/client/[22m[36massets/webhooks.customers.data_request-l0sNRNKZ.js  [39m[1m[2m  0.00 kB[22m[1m[22m[2m │ gzip:   0.02 kB[22m
+[2mbuild/client/[22m[36massets/webhooks.app.scopes_update-l0sNRNKZ.js       [39m[1m[2m  0.00 kB[22m[1m[22m[2m │ gzip:   0.02 kB[22m
+[2mbuild/client/[22m[36massets/webhooks.customers.redact-l0sNRNKZ.js        [39m[1m[2m  0.00 kB[22m[1m[22m[2m │ gzip:   0.02 kB[22m
+[2mbuild/client/[22m[36massets/webhooks.app.uninstalled-l0sNRNKZ.js         [39m[1m[2m  0.00 kB[22m[1m[22m[2m │ gzip:   0.02 kB[22m
+[2mbuild/client/[22m[36massets/webhooks.app.installed-l0sNRNKZ.js           [39m[1m[2m  0.00 kB[22m[1m[22m[2m │ gzip:   0.02 kB[22m
+[2mbuild/client/[22m[36massets/webhooks.orders.create-l0sNRNKZ.js           [39m[1m[2m  0.00 kB[22m[1m[22m[2m │ gzip:   0.02 kB[22m
+[2mbuild/client/[22m[36massets/webhooks.shop.redact-l0sNRNKZ.js             [39m[1m[2m  0.00 kB[22m[1m[22m[2m │ gzip:   0.02 kB[22m
+[2mbuild/client/[22m[36massets/webhooks.compliance-l0sNRNKZ.js              [39m[1m[2m  0.00 kB[22m[1m[22m[2m │ gzip:   0.02 kB[22m
+[2mbuild/client/[22m[36massets/apps.shopmate-l0sNRNKZ.js                    [39m[1m[2m  0.00 kB[22m[1m[22m[2m │ gzip:   0.02 kB[22m
+[2mbuild/client/[22m[36massets/apps.shopmate.track-l0sNRNKZ.js              [39m[1m[2m  0.00 kB[22m[1m[22m[2m │ gzip:   0.02 kB[22m
+[2mbuild/client/[22m[36massets/apps.shopmate.chat-l0sNRNKZ.js               [39m[1m[2m  0.00 kB[22m[1m[22m[2m │ gzip:   0.02 kB[22m
+[2mbuild/client/[22m[36massets/api.chat-l0sNRNKZ.js                         [39m[1m[2m  0.00 kB[22m[1m[22m[2m │ gzip:   0.02 kB[22m
+[2mbuild/client/[22m[36massets/auth._-l0sNRNKZ.js                           [39m[1m[2m  0.00 kB[22m[1m[22m[2m │ gzip:   0.02 kB[22m
+[2mbuild/client/[22m[36massets/health-l0sNRNKZ.js                           [39m[1m[2m  0.00 kB[22m[1m[22m[2m │ gzip:   0.02 kB[22m
+[2mbuild/client/[22m[36massets/app.feedback-2rTWLTn2.js                     [39m[1m[2m  0.13 kB[22m[1m[22m[2m │ gzip:   0.14 kB[22m
+[2mbuild/client/[22m[36massets/app.billing-Co5XXaLC.js                      [39m[1m[2m  0.21 kB[22m[1m[22m[2m │ gzip:   0.18 kB[22m
+[2mbuild/client/[22m[36massets/types-DNohUxQ8.js                            [39m[1m[2m  0.21 kB[22m[1m[22m[2m │ gzip:   0.17 kB[22m
+[2mbuild/client/[22m[36massets/check-CW7eJheO.js                            [39m[1m[2m  0.30 kB[22m[1m[22m[2m │ gzip:   0.25 kB[22m
+[2mbuild/client/[22m[36massets/arrow-left-DPvD9mcB.js                       [39m[1m[2m  0.35 kB[22m[1m[22m[2m │ gzip:   0.27 kB[22m
+[2mbuild/client/[22m[36massets/search-Cmdythys.js                           [39m[1m[2m  0.35 kB[22m[1m[22m[2m │ gzip:   0.28 kB[22m
+[2mbuild/client/[22m[36massets/clsx-B-dksMZM.js                             [39m[1m[2m  0.37 kB[22m[1m[22m[2m │ gzip:   0.24 kB[22m
+[2mbuild/client/[22m[36massets/dollar-sign-DrVHwZx8.js                      [39m[1m[2m  0.40 kB[22m[1m[22m[2m │ gzip:   0.30 kB[22m
+[2mbuild/client/[22m[36massets/message-square-BcOGxyUR.js                   [39m[1m[2m  0.42 kB[22m[1m[22m[2m │ gzip:   0.31 kB[22m
+[2mbuild/client/[22m[36massets/message-circle-3bDPt_Sy.js                   [39m[1m[2m  0.43 kB[22m[1m[22m[2m │ gzip:   0.32 kB[22m
+[2mbuild/client/[22m[36massets/circle-alert-CGAiXXH0.js                     [39m[1m[2m  0.43 kB[22m[1m[22m[2m │ gzip:   0.30 kB[22m
+[2mbuild/client/[22m[36massets/external-link-O4LvooBA.js                    [39m[1m[2m  0.44 kB[22m[1m[22m[2m │ gzip:   0.31 kB[22m
+[2mbuild/client/[22m[36massets/zap-DyMBngwD.js                              [39m[1m[2m  0.45 kB[22m[1m[22m[2m │ gzip:   0.32 kB[22m
+[2mbuild/client/[22m[36massets/book-open-Ddd2jPHf.js                        [39m[1m[2m  0.46 kB[22m[1m[22m[2m │ gzip:   0.32 kB[22m
+[2mbuild/client/[22m[36massets/refresh-cw-CqrE-iwD.js                       [39m[1m[2m  0.51 kB[22m[1m[22m[2m │ gzip:   0.33 kB[22m
+[2mbuild/client/[22m[36massets/index-DaI-NHKp.js                            [39m[1m[2m  0.52 kB[22m[1m[22m[2m │ gzip:   0.33 kB[22m
+[2mbuild/client/[22m[36massets/package-BVxdel5r.js                          [39m[1m[2m  0.56 kB[22m[1m[22m[2m │ gzip:   0.37 kB[22m
+[2mbuild/client/[22m[36massets/route-nayMm79n.js                            [39m[1m[2m  0.60 kB[22m[1m[22m[2m │ gzip:   0.41 kB[22m
+[2mbuild/client/[22m[36massets/AppProxyProvider-BH7iRjkp.js                 [39m[1m[2m  0.63 kB[22m[1m[22m[2m │ gzip:   0.39 kB[22m
+[2mbuild/client/[22m[36massets/trending-up-duLCjAR7.js                      [39m[1m[2m  0.65 kB[22m[1m[22m[2m │ gzip:   0.34 kB[22m
+[2mbuild/client/[22m[36massets/sparkles-CqSJcIit.js                         [39m[1m[2m  0.68 kB[22m[1m[22m[2m │ gzip:   0.39 kB[22m
+[2mbuild/client/[22m[36massets/app-ruTyMVBf.js                              [39m[1m[2m  0.78 kB[22m[1m[22m[2m │ gzip:   0.38 kB[22m
+[2mbuild/client/[22m[36massets/app.additional-BmvMqkNG.js                   [39m[1m[2m  1.08 kB[22m[1m[22m[2m │ gzip:   0.52 kB[22m
+[2mbuild/client/[22m[36massets/root-B7QAhmMd.js                             [39m[1m[2m  1.40 kB[22m[1m[22m[2m │ gzip:   0.65 kB[22m
+[2mbuild/client/[22m[36massets/route-BLWKKuCX.js                            [39m[1m[2m  1.49 kB[22m[1m[22m[2m │ gzip:   0.62 kB[22m
+[2mbuild/client/[22m[36massets/createLucideIcon-CVk-SDib.js                 [39m[1m[2m  2.59 kB[22m[1m[22m[2m │ gzip:   0.82 kB[22m
+[2mbuild/client/[22m[36massets/app.order-tracking-HlYBYPIw.js               [39m[1m[2m  2.65 kB[22m[1m[22m[2m │ gzip:   0.90 kB[22m
+[2mbuild/client/[22m[36massets/app.escalation-BFittJRe.js                   [39m[1m[2m  2.88 kB[22m[1m[22m[2m │ gzip:   0.93 kB[22m
+[2mbuild/client/[22m[36massets/app.recommendations-3n7r2F9g.js              [39m[1m[2m  4.05 kB[22m[1m[22m[2m │ gzip:   1.46 kB[22m
+[2mbuild/client/[22m[36massets/app.conversations-CLrsRAGj.js                [39m[1m[2m  5.09 kB[22m[1m[22m[2m │ gzip:   1.87 kB[22m
+[2mbuild/client/[22m[36massets/entry.client-CpytyXKv.js                     [39m[1m[2m  6.51 kB[22m[1m[22m[2m │ gzip:   2.60 kB[22m
+[2mbuild/client/[22m[36massets/app.connection-test-D_omnMkp.js              [39m[1m[2m  6.75 kB[22m[1m[22m[2m │ gzip:   2.53 kB[22m
+[2mbuild/client/[22m[36massets/app.setup-BwG9QyqD.js                        [39m[1m[2m  8.80 kB[22m[1m[22m[2m │ gzip:   3.24 kB[22m
+[2mbuild/client/[22m[36massets/app.customize-DjzIti1u.js                    [39m[1m[2m 10.92 kB[22m[1m[22m[2m │ gzip:   3.69 kB[22m
+[2mbuild/client/[22m[36massets/button-zumcgLo3.js                           [39m[1m[2m 11.10 kB[22m[1m[22m[2m │ gzip:   4.07 kB[22m
+[2mbuild/client/[22m[36massets/app.knowledge-SSKke93Y.js                    [39m[1m[2m 12.61 kB[22m[1m[22m[2m │ gzip:   3.62 kB[22m
+[2mbuild/client/[22m[36massets/internal-admin-CIihZQIL.js                   [39m[1m[2m 17.38 kB[22m[1m[22m[2m │ gzip:   4.62 kB[22m
+[2mbuild/client/[22m[36massets/input-Dka_AMar.js                            [39m[1m[2m 26.94 kB[22m[1m[22m[2m │ gzip:   8.57 kB[22m
+[2mbuild/client/[22m[36massets/chunk-JZWAC4HX-BDlEFBj9.js                   [39m[1m[2m125.89 kB[22m[1m[22m[2m │ gzip:  42.41 kB[22m
+[2mbuild/client/[22m[36massets/index-DkpWSyHP.js                            [39m[1m[2m134.69 kB[22m[1m[22m[2m │ gzip:  43.24 kB[22m
+[2mbuild/client/[22m[36massets/app.widget-preview-BK5gHTc0.js               [39m[1m[2m135.82 kB[22m[1m[22m[2m │ gzip:  44.53 kB[22m
+[2mbuild/client/[22m[36massets/app._index-D5LIffkT.js                       [39m[1m[2m382.77 kB[22m[1m[22m[2m │ gzip: 113.97 kB[22m
+[32m✓ built in 9.84s[39m
+[36mvite v6.4.1 [32mbuilding SSR bundle for production...[36m[39m
+transforming...
+[32m✓[39m 48 modules transformed.
+rendering chunks...
+[2mbuild/server/[22m[32m.vite/manifest.json               [39m[1m[2m  0.45 kB[22m[1m[22m
+[2mbuild/server/[22m[35massets/server-build-CNPfFM0M.css  [39m[1m[2m  0.76 kB[22m[1m[22m
+[2mbuild/server/[22m[35massets/shopmate-ZKlFUyru.css      [39m[1m[2m 68.39 kB[22m[1m[22m
+[2mbuild/server/[22m[36mindex.js                          [39m[1m[2m303.38 kB[22m[1m[22m
+
+[32m✓[39m 2 assets cleaned from React Router server build.
+[2mbuild\client\assets\shopmate-ZKlFUyru.css[22m
+[2mbuild\server\assets\server-build-CNPfFM0M.css[22m
+
+[32m✓ built in 715ms[39m
