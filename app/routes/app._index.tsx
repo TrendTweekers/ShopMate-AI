@@ -1035,8 +1035,3 @@ export default function Dashboard() {
 export const headers: HeadersFunction = (headersArgs) => {
   return boundary.headers(headersArgs);
 };
-
-export function ErrorBoundary() {
-  const error = useRouteError();
-  return boundary.error(error);
-}

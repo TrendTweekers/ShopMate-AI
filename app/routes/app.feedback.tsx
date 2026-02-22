@@ -63,7 +63,3 @@ export const loader = async () => {
 
 export const headers = (headersArgs: Parameters<typeof boundary.headers>[0]) =>
   boundary.headers(headersArgs);
-
-export function ErrorBoundary() {
-  return boundary.error(new Error("Feedback route error"));
-}
