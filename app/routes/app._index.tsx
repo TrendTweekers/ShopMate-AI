@@ -1,5 +1,5 @@
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useFetcher, useLoaderData, useNavigate, useRouteError } from "react-router";
+import { useLoaderData, useNavigate, useRouteError } from "react-router";
 import { useState, useEffect, useRef } from "react";
 import { MessageSquare, ShieldCheck, Clock, TrendingUp, Zap, DollarSign, MessageCircle } from "lucide-react";
 import KpiCard from "~/components/admin/KpiCard";
@@ -400,7 +400,6 @@ function ReviewBanner({
 // ─── FeedbackModal component ──────────────────────────────────────────────────
 
 function FeedbackModal({ onClose }: { onClose: () => void }) {
-  const fetcher = useFetcher<{ ok: boolean; error?: string }>();
   const [message, setMessage] = useState("");
   const [email, setEmail]     = useState("");
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -409,21 +408,6 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
   // Focus textarea when modal opens
   useEffect(() => { textareaRef.current?.focus(); }, []);
 
-  // After successful submit: show toast and close modal
-  useEffect(() => {
-    console.log("[feedback-modal] Fetcher state:", { state: fetcher.state, data: fetcher.data });
-    if (fetcher.state === "idle" && fetcher.data?.ok) {
-      setToastMsg("✓ Feedback sent — thank you!");
-      setTimeout(() => {
-        setMessage("");
-        setEmail("");
-        onClose();
-      }, 2000);
-    } else if (fetcher.state === "idle" && fetcher.data?.ok === false) {
-      console.log("[feedback-modal] Feedback submission failed:", fetcher.data.error);
-    }
-  }, [fetcher.state, fetcher.data, onClose]);
-
   // Close on Escape key
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -431,26 +415,53 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
 
-  const isSubmitting = fetcher.state !== "idle";
-  const serverError  = fetcher.data?.ok === false ? fetcher.data.error : null;
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
     if (!message.trim()) {
       return;
     }
 
-    console.log("[feedback-modal] Submitting feedback via fetcher...");
-    const formData = new FormData();
-    formData.append("message", message);
-    if (email.trim()) {
-      formData.append("email", email);
-    }
+    setIsSubmitting(true);
+    setLocalError(null);
 
-    // Use fetcher to submit to /app/feedback action
-    // The fetcher handles the request in the embedded context properly
-    fetcher.submit(formData, { method: "post", action: "/app/feedback" });
+    try {
+      console.log("[feedback-modal] Submitting feedback via direct fetch...");
+      const formData = new FormData();
+      formData.append("message", message);
+      if (email.trim()) {
+        formData.append("email", email);
+      }
+
+      const feedbackUrl = "/app/feedback";
+      console.log("[feedback-modal] Posting to:", feedbackUrl);
+
+      const response = await fetch(feedbackUrl, {
+        method: "POST",
+        body: formData,
+      });
+
+      console.log("[feedback-modal] Response status:", response.status);
+      const data = await response.json();
+      console.log("[feedback-modal] Response data:", data);
+
+      if (data.ok) {
+        setToastMsg("✓ Feedback sent — thank you!");
+        setMessage("");
+        setEmail("");
+        setTimeout(onClose, 2000);
+      } else {
+        setLocalError(data.error || "Failed to save feedback");
+      }
+    } catch (error) {
+      console.error("[feedback-modal] Fetch error:", error);
+      setLocalError("Network error - please try again");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -637,8 +648,8 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
             />
           </div>
 
-          {/* Server error */}
-          {serverError && (
+          {/* Error message */}
+          {localError && (
             <div style={{
               margin: 0,
               fontSize: 14,
@@ -652,7 +663,7 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
               gap: 8,
             }}>
               <span style={{ fontSize: 16 }}>⚠</span>
-              <span>{serverError}</span>
+              <span>{localError}</span>
             </div>
           )}
 
