@@ -366,10 +366,7 @@ function ReviewBanner({
   trigger: string;
   aiHandledChats: number;
 }) {
-  const fetcher = useFetcher();
-
-  // Optimistically hide once merchant clicks either button
-  if (fetcher.state !== "idle") return null;
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const headlineMap: Record<string, string> = {
     ai_handled: `🎉 Great job! ShopMate has handled ${aiHandledChats} customer chat${aiHandledChats !== 1 ? "s" : ""}!`,
@@ -382,17 +379,36 @@ function ReviewBanner({
   function handleReview() {
     // Open review page in new tab
     window.open(REVIEW_URL, "_blank", "noopener,noreferrer");
-    // Mark as reviewed in DB so the banner never shows again
-    const fd = new FormData();
-    fd.append("intent", "review_completed");
-    fetcher.submit(fd, { method: "post" });
+    // Mark as reviewed in DB via form submission
+    setIsSubmitting(true);
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = "/app";
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = "intent";
+    input.value = "review_completed";
+    form.appendChild(input);
+    document.body.appendChild(form);
+    form.submit();
   }
 
   function handleDismiss() {
-    const fd = new FormData();
-    fd.append("intent", "review_dismissed");
-    fetcher.submit(fd, { method: "post" });
+    setIsSubmitting(true);
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = "/app";
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = "intent";
+    input.value = "review_dismissed";
+    form.appendChild(input);
+    document.body.appendChild(form);
+    form.submit();
   }
+
+  // Hide banner while submitting
+  if (isSubmitting) return null;
 
   return (
     <div
