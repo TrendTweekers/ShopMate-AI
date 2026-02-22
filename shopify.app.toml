@@ -19,6 +19,19 @@ api_version = "2026-01"
   topics = [ "app/uninstalled" ]
   uri = "/webhooks/app/uninstalled"
 
+  # GDPR / privacy-law mandatory compliance webhooks
+  [[webhooks.subscriptions]]
+  topics = [ "customers/data_request" ]
+  uri = "/webhooks/customers/data_request"
+
+  [[webhooks.subscriptions]]
+  topics = [ "customers/redact" ]
+  uri = "/webhooks/customers/redact"
+
+  [[webhooks.subscriptions]]
+  topics = [ "shop/redact" ]
+  uri = "/webhooks/shop/redact"
+
   # orders/create requires Shopify Protected Customer Data approval.
   # The route webhooks.orders.create.tsx is in place and ready — uncomment
   # once PCD approval is granted from the Partners Dashboard.
