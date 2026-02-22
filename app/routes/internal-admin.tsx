@@ -121,6 +121,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       message: true,
       email: true,
       createdAt: true,
+      replied: true,
     },
   });
 
@@ -177,7 +178,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     message: f.message,
     email: f.email,
     createdAt: f.createdAt.toISOString(),
-    replied: false,
+    replied: f.replied,
   }));
 
   return { stores, globalStats, feedback };
@@ -262,6 +263,22 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     });
 
     return { success: true, type: "update-health" };
+  }
+
+  if (action === "toggle-replied") {
+    const feedbackId = formData.get("feedbackId") as string;
+
+    const current = await prisma.feedback.findUnique({
+      where: { id: feedbackId },
+      select: { replied: true },
+    });
+
+    await prisma.feedback.update({
+      where: { id: feedbackId },
+      data: { replied: !current?.replied },
+    });
+
+    return { success: true, type: "toggle-replied", replied: !current?.replied };
   }
 
   throw new Response("Unknown action", { status: 400 });
@@ -784,6 +801,7 @@ interface FeedbackInboxProps {
 
 function FeedbackInbox({ entries }: FeedbackInboxProps) {
   const [sortBy, setSortBy] = useState<"recent" | "oldest">("recent");
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const sorted = [...entries].sort((a, b) => {
     if (sortBy === "recent") {
@@ -791,6 +809,25 @@ function FeedbackInbox({ entries }: FeedbackInboxProps) {
     }
     return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
   });
+
+  const handleToggleReplied = async (feedbackId: string) => {
+    setTogglingId(feedbackId);
+    const formData = new FormData();
+    formData.append("_action", "toggle-replied");
+    formData.append("feedbackId", feedbackId);
+
+    try {
+      await fetch(`?password=${new URL(window.location.href).searchParams.get("password")}`, {
+        method: "POST",
+        body: formData,
+      });
+      // Optionally reload to reflect changes
+      window.location.reload();
+    } catch (error) {
+      console.error("Failed to toggle replied status:", error);
+      setTogglingId(null);
+    }
+  };
 
   return (
     <div>
@@ -816,24 +853,46 @@ function FeedbackInbox({ entries }: FeedbackInboxProps) {
           {sorted.map((entry) => (
             <div
               key={entry.id}
-              className="bg-slate-800 rounded-lg border border-slate-700 p-4 hover:border-slate-600 transition"
+              className={`bg-slate-800 rounded-lg border p-4 hover:border-slate-600 transition ${
+                entry.replied ? "border-green-700 bg-opacity-50" : "border-slate-700"
+              }`}
             >
               <div className="flex items-start justify-between mb-2 flex-wrap gap-2">
-                <div className="min-w-0">
-                  <p className="font-semibold text-white text-sm truncate">{entry.shop}</p>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-semibold text-white text-sm truncate">{entry.shop}</p>
+                    {entry.replied && (
+                      <span className="px-2 py-0.5 bg-green-900 text-green-300 text-xs font-medium rounded">
+                        ✓ Replied
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-slate-400 mt-1">
                     <Clock size={12} className="inline mr-1" />
                     {new Date(entry.createdAt).toLocaleString()}
                   </p>
                 </div>
-                {entry.email && (
-                  <a
-                    href={`mailto:${entry.email}`}
-                    className="text-blue-400 hover:text-blue-300 text-xs font-medium flex-shrink-0"
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    onClick={() => handleToggleReplied(entry.id)}
+                    disabled={togglingId === entry.id}
+                    className={`px-2 py-1 rounded text-xs font-medium transition ${
+                      entry.replied
+                        ? "bg-green-900 text-green-300 hover:bg-green-800"
+                        : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+                    } ${togglingId === entry.id ? "opacity-50 cursor-not-allowed" : ""}`}
                   >
-                    Reply
-                  </a>
-                )}
+                    {togglingId === entry.id ? "Updating..." : entry.replied ? "✓ Mark Unread" : "Mark Replied"}
+                  </button>
+                  {entry.email && (
+                    <a
+                      href={`mailto:${entry.email}`}
+                      className="text-blue-400 hover:text-blue-300 text-xs font-medium"
+                    >
+                      Reply
+                    </a>
+                  )}
+                </div>
               </div>
               <p className="text-slate-300 text-sm leading-relaxed break-words">{entry.message}</p>
               {entry.email && (

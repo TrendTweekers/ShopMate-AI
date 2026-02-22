@@ -128,6 +128,7 @@ model Feedback {
   message   String                        // required free-text feedback
   email     String?                       // optional merchant reply-to email
   plan      String   @default("free")     // plan at time of submission
+  replied   Boolean  @default(false)      // admin marked as replied
   createdAt DateTime @default(now())
 
   @@index([shop])
