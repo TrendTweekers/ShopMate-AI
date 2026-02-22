@@ -6,15 +6,8 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  // Destructuring `session` is required so the SDK registers a session record
-  // in the DB — needed for Shopify's App Store review check
-  // "Using session tokens for user authentication".
   const { session } = await authenticate.admin(request);
-
-  return {
-    apiKey: process.env.SHOPIFY_API_KEY || "",
-    shop: session.shop,
-  };
+  return { apiKey: process.env.SHOPIFY_API_KEY || "" };
 };
 
 export default function AppLayout() {
