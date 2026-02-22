@@ -320,6 +320,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   if (!adminCtx) {
     console.warn("[appProxy/base] adminCtx missing — order/product features disabled for shop:", shop);
+    // Set sentinels so the AI gives a useful reply for intent-matching messages
+    if (isOrderTrackingIntent(message)) {
+      extraContext = "NO_ADMIN_CTX_ORDER: Order tracking is temporarily unavailable.";
+    } else if (isProductRecommendationIntent(message)) {
+      extraContext = "NO_ADMIN_CTX_PRODUCT: Product catalog is temporarily unavailable.";
+    }
   } else if (isOrderTrackingIntent(message)) {
     const rawNumber = extractOrderNumber(message);
     if (rawNumber) {
@@ -338,17 +344,25 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     content: m.content,
   }));
 
-  // Map diagnostic context strings to AI-friendly instructions
+  // Map diagnostic sentinel strings to AI-friendly instructions (most-specific first)
   let extraContextForAI = extraContext;
   if (extraContext.startsWith("ORDER_NOT_FOUND:")) {
     const num = extraContext.replace("ORDER_NOT_FOUND:", "");
     extraContextForAI = `No order found matching ${num}. Ask the customer to double-check their order number from their confirmation email.`;
   } else if (extraContext.startsWith("ORDER_LOOKUP_ERROR:")) {
     extraContextForAI = "Order lookup failed. Apologise and suggest the customer contact support.";
-  } else if (extraContext.startsWith("PRODUCT_ACCESS_ERROR:") || extraContext.startsWith("PRODUCT_EMPTY:") || extraContext.startsWith("PRODUCT_EXCEPTION:")) {
-    extraContextForAI = "Product information is temporarily unavailable. Suggest the customer browse the store directly.";
   } else if (extraContext.startsWith("NEED_ORDER_NUMBER:")) {
     extraContextForAI = "Ask the customer for their order number (e.g. #1234) from their confirmation email.";
+  } else if (extraContext.startsWith("NO_ADMIN_CTX_ORDER:")) {
+    extraContextForAI = "Order tracking is temporarily unavailable due to a configuration issue. Apologise and ask the customer to check their confirmation email for a tracking link or contact the store directly.";
+  } else if (extraContext.startsWith("NO_ADMIN_CTX_PRODUCT:")) {
+    extraContextForAI = `The live product catalog is temporarily unavailable. Apologise briefly and direct the customer to browse products directly at https://${shop}/collections/all.`;
+  } else if (extraContext.startsWith("PRODUCT_ACCESS_ERROR:")) {
+    extraContextForAI = `Product catalog access failed. Apologise briefly and direct the customer to https://${shop}/collections/all to browse directly.`;
+  } else if (extraContext.startsWith("PRODUCT_EMPTY:")) {
+    extraContextForAI = `No products matched that query. Suggest the customer browse https://${shop}/collections/all or try a different search term.`;
+  } else if (extraContext.startsWith("PRODUCT_EXCEPTION:")) {
+    extraContextForAI = `Product information is temporarily unavailable. Apologise and direct the customer to https://${shop}/collections/all.`;
   }
 
   const systemPrompt = [

@@ -447,10 +447,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   let featureError: string | undefined;
 
   if (!adminCtx) {
-    // Log clearly instead of silently skipping
+    // No offline session token — order/product GraphQL calls are impossible.
+    // Set a sentinel so the AI context handler below gives a sensible reply.
     console.warn("[appProxy] adminCtx is missing — order/product features disabled.");
     console.warn("[appProxy] Reason: no offline session token for shop:", shop);
     featureError = "no_admin_ctx";
+
+    // Give the AI specific guidance depending on what the customer asked about
+    if (isOrderTrackingIntent(message)) {
+      extraContext = "NO_ADMIN_CTX_ORDER: The order tracking system is temporarily unavailable.";
+    } else if (isProductRecommendationIntent(message)) {
+      extraContext = "NO_ADMIN_CTX_PRODUCT: The product catalog is temporarily unavailable.";
+    }
   } else if (isOrderTrackingIntent(message)) {
     const rawNumber = extractOrderNumber(message);
     if (rawNumber) {
@@ -502,18 +510,28 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     : "";
 
   // ── System prompt ─────────────────────────────────────────────────────────
-  // Special handling for diagnostic contexts so the AI gives precise answers
+  // Translate diagnostic sentinels into AI-appropriate instructions.
+  // IMPORTANT: each branch must be mutually exclusive — list most-specific first.
   let extraContextForAI = "";
   if (extraContext.startsWith("ORDER_NOT_FOUND:")) {
     const num = extraContext.replace("ORDER_NOT_FOUND:", "");
-    extraContextForAI = `No order found matching ${num}. Possible reasons: the order number may be wrong, the order belongs to a different store, or it was placed very recently and hasn't synced. Ask the customer to double-check their confirmation email and provide the exact order number.`;
+    extraContextForAI = `No order was found matching ${num}. Possible reasons: the number may be wrong, the order belongs to a different store, or it was placed very recently. Ask the customer to double-check their confirmation email and provide the exact order number.`;
   } else if (extraContext.startsWith("ORDER_LOOKUP_ERROR:")) {
-    extraContextForAI = `Order lookup failed with a technical error. Apologise and ask the customer to try again or contact support.`;
-  } else if (extraContext.startsWith("ORDER_LOOKUP_ERROR:") || extraContext.startsWith("PRODUCT_ACCESS_ERROR:") || extraContext.startsWith("PRODUCT_EMPTY:") || extraContext.startsWith("PRODUCT_EXCEPTION:")) {
-    extraContextForAI = `Product information is temporarily unavailable. Apologise and suggest the customer browse the store directly.`;
+    extraContextForAI = `Order lookup failed due to a technical error. Apologise briefly and ask the customer to try again in a moment or contact support directly.`;
   } else if (extraContext.startsWith("NEED_ORDER_NUMBER:")) {
-    extraContextForAI = "The customer asked about an order but did not provide an order number. Ask them for their order number from their confirmation email (e.g. #1234).";
+    extraContextForAI = "The customer asked about order tracking but did not provide an order number. Ask them for their order number from their confirmation email (e.g. #1234).";
+  } else if (extraContext.startsWith("NO_ADMIN_CTX_ORDER:")) {
+    extraContextForAI = "Order tracking is temporarily unavailable due to a configuration issue. Apologise and ask the customer to contact the store directly or check their confirmation email for a tracking link.";
+  } else if (extraContext.startsWith("NO_ADMIN_CTX_PRODUCT:")) {
+    extraContextForAI = `The live product catalog is temporarily unavailable. Apologise briefly and direct the customer to browse products directly at https://${shop}/collections/all where they can see everything available.`;
+  } else if (extraContext.startsWith("PRODUCT_ACCESS_ERROR:")) {
+    extraContextForAI = `Product catalog access failed (likely a permissions issue). Apologise briefly and direct the customer to browse products directly at https://${shop}/collections/all.`;
+  } else if (extraContext.startsWith("PRODUCT_EMPTY:")) {
+    extraContextForAI = `No products matched the customer's query in the catalog. Suggest they browse all products at https://${shop}/collections/all or try a different search term.`;
+  } else if (extraContext.startsWith("PRODUCT_EXCEPTION:")) {
+    extraContextForAI = `Product information is temporarily unavailable due to a technical issue. Apologise briefly and direct the customer to https://${shop}/collections/all to browse directly.`;
   } else {
+    // Passes through ORDER FOUND context, RECOMMENDED PRODUCTS context, etc.
     extraContextForAI = extraContext;
   }
 
