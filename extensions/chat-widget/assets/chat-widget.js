@@ -33,7 +33,8 @@
     : ["Track my order", "Recommend a product", "What's your return policy?", "Talk to a human"];
   // Always relative so Shopify's proxy adds the HMAC signature.
   // API_BASE is "" — kept for backward compat if someone sets it.
-  const API_URL = API_BASE + "/apps/shopmate/chat";
+  const API_URL   = API_BASE + "/apps/shopmate/chat";
+  const TRACK_URL = API_BASE + "/apps/shopmate/track";
 
   // ── Exit-intent / idle nudge config ────────────────────────────────────────
   // exitIntent: false → disabled entirely. Default: true.
@@ -392,9 +393,15 @@
       : "<p class=\"sm-para\">" + escHtml(msg.text) + "</p>";
     let html = `<div class="sm-msg-row ${msg.role === "user" ? "user" : ""}"><div class="sm-bubble ${cls}">${bodyHtml}</div></div>`;
     if (msg.products && msg.products.length) {
-      html += `<div class="sm-msg-row"><div class="sm-products">`;
+      html += `<div class="sm-msg-row"><div class="sm-products" id="sm-products-${msg._pid || ""}">`;
       msg.products.forEach(function(p) {
-        html += `<a class="sm-product-card" href="${escHtml(p.url)}" target="_blank" rel="noopener noreferrer">
+        // Append shopmate_ref so the storefront's landing_site carries the conv ID
+        var ref   = conversationId ? encodeURIComponent(conversationId) : "";
+        var href  = escHtml(p.url + (ref ? "?shopmate_ref=" + ref : ""));
+        html += `<a class="sm-product-card" href="${href}" target="_blank" rel="noopener noreferrer"
+            data-sm-product-id="${escHtml(p.id || "")}"
+            data-sm-product-handle="${escHtml(p.handle || "")}"
+            data-sm-product-title="${escHtml(p.title || "")}">
           <img class="sm-product-img" src="${escHtml(p.image || "")}" alt="${escHtml(p.title)}" onerror="this.style.display='none'">
           <div><div class="sm-product-title">${escHtml(p.title)}</div><div class="sm-product-price">${escHtml(p.price)}</div></div>
         </a>`;
@@ -442,6 +449,26 @@
 
     // Insert chips between the message list and the input row.
     panel.insertBefore(row, panel.querySelector(".sm-input-row"));
+  }
+
+  // ── Revenue attribution — product click tracking ─────────────────────────
+  // Fire-and-forget: records the click for the ORDERS_CREATE webhook to match.
+  function trackProductClick(product) {
+    if (!conversationId) return; // no conversation yet — skip
+    try {
+      fetch(TRACK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // keepalive so the request survives navigating away to the product page
+        keepalive: true,
+        body: JSON.stringify({
+          conversationId: conversationId,
+          productId:      product.id     || "",
+          productHandle:  product.handle || "",
+          productTitle:   product.title  || "",
+        }),
+      }).catch(function() {}); // silent failure — never interrupt the user
+    } catch(e) {}
   }
 
   // ── API call ──────────────────────────────────────────────────────────────
@@ -697,6 +724,17 @@
 
     renderMessages();
     console.log("[ShopMate] Widget ready. sendBtn in DOM:", document.body.contains(sendBtn));
+
+    // Delegated click listener for product cards — fires AFTER innerHTML renders
+    msgList.addEventListener("click", function(e) {
+      var card = e.target.closest(".sm-product-card");
+      if (!card) return;
+      trackProductClick({
+        id:     card.getAttribute("data-sm-product-id")     || "",
+        handle: card.getAttribute("data-sm-product-handle") || "",
+        title:  card.getAttribute("data-sm-product-title")  || "",
+      });
+    });
 
     // Start exit-intent / idle nudge detection
     initExitIntent();

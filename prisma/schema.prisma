@@ -71,6 +71,28 @@ model KnowledgeBase {
   @@unique([shop, type])                   // one row per policy type per shop
 }
 
+// Revenue attribution — tracks which product card clicks in chat
+// led to a completed order within a 24-hour attribution window.
+// One row per product click; order_id / attributed_revenue filled
+// in by the ORDERS_CREATE webhook when a match is found.
+model ChatAttribution {
+  id                 String    @id @default(cuid())
+  shop               String
+  conversationId     String
+  productId          String                          // Shopify GID, e.g. "gid://shopify/Product/123"
+  productHandle      String                          // for leaderboard display
+  productTitle       String
+  clickedAt          DateTime  @default(now())
+  orderId            String?                         // Shopify order GID, set on attribution
+  orderValue         Float?                          // total order value (for reference)
+  attributedRevenue  Float?                          // revenue attributed to this product
+  attributedAt       DateTime?
+
+  @@index([shop, clickedAt])
+  @@index([shop, attributedAt])
+  @@index([conversationId])
+}
+
 model Session {
   id            String    @id
   shop          String

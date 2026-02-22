@@ -102,6 +102,7 @@ const PRODUCTS_QUERY = `#graphql
 
 interface ProductResult {
   id: string;
+  handle: string;
   title: string;
   price: string;
   image: string | null;
@@ -190,6 +191,7 @@ async function fetchProducts(
       const amount = price?.amount ? parseFloat(price.amount).toFixed(2) : "0.00";
       return {
         id: p.id ?? "",
+        handle: p.handle ?? "",
         title: p.title ?? "Product",
         price: `${price?.currencyCode ?? "USD"} ${amount}`,
         image: p.featuredImage?.url ?? null,

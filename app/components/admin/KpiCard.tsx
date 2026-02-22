@@ -21,14 +21,20 @@ export default function KpiCard({ title, value, change, trend, icon: Icon }: Kpi
             ) : (
               <TrendingDown className="w-3.5 h-3.5 text-destructive" />
             )}
-            <span
-              className={`text-xs font-medium ${
-                trend === "up" ? "text-success" : "text-destructive"
-              }`}
-            >
-              {change}
-            </span>
-            <span className="text-xs text-muted-foreground">vs last week</span>
+            {change ? (
+              <>
+                <span
+                  className={`text-xs font-medium ${
+                    trend === "up" ? "text-success" : "text-destructive"
+                  }`}
+                >
+                  {change}
+                </span>
+                <span className="text-xs text-muted-foreground">vs last week</span>
+              </>
+            ) : (
+              <span className="text-xs text-muted-foreground">—</span>
+            )}
           </div>
         </div>
         <div className="w-10 h-10 rounded-lg bg-accent flex items-center justify-center">

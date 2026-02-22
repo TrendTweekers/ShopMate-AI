@@ -1,6 +1,6 @@
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useFetcher, useLoaderData } from "react-router";
-import { MessageSquare, ShieldCheck, Clock, TrendingUp, Zap } from "lucide-react";
+import { MessageSquare, ShieldCheck, Clock, TrendingUp, Zap, DollarSign } from "lucide-react";
 import KpiCard from "~/components/admin/KpiCard";
 import {
   BarChart,
@@ -179,6 +179,63 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const avgMessages =
     totalChats > 0 ? (totalMessages / totalChats).toFixed(1) : "0";
 
+  // ── Revenue attribution KPIs ──
+  // Total all-time attributed revenue for this shop
+  const allTimeAttributions = await prisma.chatAttribution.findMany({
+    where: { shop, attributedRevenue: { not: null } },
+    select: { attributedRevenue: true, productTitle: true, productHandle: true, attributedAt: true },
+  });
+
+  const totalRevenue = allTimeAttributions.reduce(
+    (sum, a) => sum + (a.attributedRevenue ?? 0), 0,
+  );
+
+  // This week's attributed revenue (last 7 days)
+  const weekRevenue = allTimeAttributions
+    .filter((a) => a.attributedAt && a.attributedAt >= sevenDaysAgo)
+    .reduce((sum, a) => sum + (a.attributedRevenue ?? 0), 0);
+
+  // Last week's attributed revenue (days 8-14 ago, for % change)
+  const fourteenDaysAgo = new Date(sevenDaysAgo.getTime() - 7 * 86_400_000);
+  const lastWeekRevenue = allTimeAttributions
+    .filter(
+      (a) => a.attributedAt && a.attributedAt >= fourteenDaysAgo && a.attributedAt < sevenDaysAgo,
+    )
+    .reduce((sum, a) => sum + (a.attributedRevenue ?? 0), 0);
+
+  const revenueChangePct =
+    lastWeekRevenue > 0
+      ? Math.round(((weekRevenue - lastWeekRevenue) / lastWeekRevenue) * 100)
+      : weekRevenue > 0
+      ? 100
+      : 0;
+
+  // ── Revenue leaderboard — top 5 products this week ──
+  // Group this week's attributions by productHandle, sum revenue, count sales.
+  const weekAttributions = allTimeAttributions.filter(
+    (a) => a.attributedAt && a.attributedAt >= sevenDaysAgo,
+  );
+  const leaderMap = new Map<string, { title: string; handle: string; revenue: number; sales: number }>();
+  for (const a of weekAttributions) {
+    const key = a.productHandle || a.productTitle;
+    if (!key) continue;
+    const existing = leaderMap.get(key);
+    if (existing) {
+      existing.revenue += a.attributedRevenue ?? 0;
+      existing.sales   += 1;
+    } else {
+      leaderMap.set(key, {
+        title:   a.productTitle,
+        handle:  a.productHandle,
+        revenue: a.attributedRevenue ?? 0,
+        sales:   1,
+      });
+    }
+  }
+  const revenueLeaderboard = [...leaderMap.values()]
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 5);
+
   // ── Review banner trigger check ──
   // Evaluated here so the merchant sees the banner on their next dashboard load
   // after enough chat activity has accumulated.
@@ -224,6 +281,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     // Review banner — only truthy when a trigger fires
     reviewTrigger: reviewTrigger as string | false,
     aiHandledChats: settings.aiHandledChats ?? 0,
+    // Revenue attribution
+    totalRevenue,
+    weekRevenue,
+    revenueChangePct,
+    revenueLeaderboard,
   };
 };
 
@@ -351,6 +413,10 @@ export default function Dashboard() {
     billingUrl,
     reviewTrigger,
     aiHandledChats,
+    totalRevenue,
+    weekRevenue,
+    revenueChangePct,
+    revenueLeaderboard,
   } = useLoaderData<typeof loader>();
 
   const isPro = plan === "pro";
@@ -435,7 +501,7 @@ export default function Dashboard() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <KpiCard
           title="Total Chats"
           value={String(totalChats)}
@@ -463,6 +529,13 @@ export default function Dashboard() {
           change=""
           trend="up"
           icon={Clock}
+        />
+        <KpiCard
+          title="Revenue from Chat"
+          value={`$${weekRevenue.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+          change={revenueChangePct !== 0 ? `${revenueChangePct > 0 ? "+" : ""}${revenueChangePct}% vs last week` : ""}
+          trend={revenueChangePct >= 0 ? "up" : "down"}
+          icon={DollarSign}
         />
       </div>
 
@@ -515,6 +588,84 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Revenue Leaderboard + Recent Conversations side-by-side on large screens */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+      {/* Revenue Leaderboard */}
+      <div className="polaris-card">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <h3 className="polaris-card-header" style={{ margin: 0 }}>🏆 Top Products via Chat</h3>
+          <span style={{ fontSize: 11, color: "hsl(208 5% 45%)" }}>This week</span>
+        </div>
+        {revenueLeaderboard.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "24px 0" }}>
+            <p style={{ fontSize: 13, color: "hsl(208 5% 45%)", margin: "0 0 6px" }}>
+              No attributed revenue yet.
+            </p>
+            <p style={{ fontSize: 12, color: "hsl(208 5% 60%)", margin: 0 }}>
+              Revenue appears here when customers buy products they clicked in chat.
+            </p>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+            {revenueLeaderboard.map((p, i) => (
+              <div
+                key={p.handle || p.title}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "10px 0",
+                  borderBottom: i < revenueLeaderboard.length - 1 ? "1px solid hsl(210 10% 92%)" : "none",
+                }}
+              >
+                {/* Rank badge */}
+                <div
+                  style={{
+                    width: 24, height: 24, borderRadius: "50%", flexShrink: 0,
+                    background: i === 0 ? "#f59e0b" : i === 1 ? "#9ca3af" : i === 2 ? "#cd7c2f" : "hsl(210 10% 89%)",
+                    color: i < 3 ? "#fff" : "hsl(208 5% 45%)",
+                    fontSize: 11, fontWeight: 700,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}
+                >
+                  {i + 1}
+                </div>
+                {/* Product name */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: "#111827", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {p.title}
+                  </p>
+                  <p style={{ margin: 0, fontSize: 11, color: "hsl(208 5% 50%)" }}>
+                    {p.sales} sale{p.sales !== 1 ? "s" : ""}
+                  </p>
+                </div>
+                {/* Revenue */}
+                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                  <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#008060" }}>
+                    ${p.revenue.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {/* All-time total */}
+        <div style={{
+          marginTop: 12,
+          paddingTop: 12,
+          borderTop: "1px solid hsl(210 10% 89%)",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}>
+          <span style={{ fontSize: 12, color: "hsl(208 5% 50%)" }}>All-time attributed revenue</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#008060" }}>
+            ${totalRevenue.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+          </span>
+        </div>
+      </div>
+
       {/* Recent Conversations */}
       <div className="polaris-card">
         <h3 className="polaris-card-header">Recent Conversations</h3>
@@ -555,6 +706,8 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      </div>{/* end leaderboard + conversations grid */}
     </div>
   );
 }
