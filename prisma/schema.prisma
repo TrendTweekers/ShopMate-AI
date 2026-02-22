@@ -112,3 +112,17 @@ model Session {
   refreshToken        String?
   refreshTokenExpires DateTime?
 }
+
+// Merchant feedback submitted from the dashboard.
+// Stored for audit trail; also emailed to admin@stackedboost.com on submit.
+model Feedback {
+  id        String   @id @default(cuid())
+  shop      String                        // e.g. "trustscore-dev.myshopify.com"
+  message   String                        // required free-text feedback
+  email     String?                       // optional merchant reply-to email
+  plan      String   @default("free")     // plan at time of submission
+  createdAt DateTime @default(now())
+
+  @@index([shop])
+  @@index([createdAt])
+}

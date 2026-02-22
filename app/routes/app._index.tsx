@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useFetcher, useLoaderData, useNavigate, useRouteError } from "react-router";
-import { MessageSquare, ShieldCheck, Clock, TrendingUp, Zap, DollarSign } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { MessageSquare, ShieldCheck, Clock, TrendingUp, Zap, DollarSign, MessageCircle } from "lucide-react";
 import KpiCard from "~/components/admin/KpiCard";
 import {
   BarChart,
@@ -396,6 +397,250 @@ function ReviewBanner({
   );
 }
 
+// ─── FeedbackModal component ──────────────────────────────────────────────────
+
+function FeedbackModal({ onClose }: { onClose: () => void }) {
+  const fetcher = useFetcher<{ ok: boolean; error?: string }>();
+  const [message, setMessage] = useState("");
+  const [email, setEmail]     = useState("");
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Focus textarea when modal opens
+  useEffect(() => { textareaRef.current?.focus(); }, []);
+
+  // After successful submit: show toast and close modal
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data?.ok) {
+      setToastMsg("Thanks for your feedback! We'll review it shortly.");
+      setTimeout(onClose, 2000);
+    }
+  }, [fetcher.state, fetcher.data, onClose]);
+
+  // Close on Escape key
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  const isSubmitting = fetcher.state !== "idle";
+  const serverError  = fetcher.data?.ok === false ? fetcher.data.error : null;
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!message.trim()) return;
+    const fd = new FormData();
+    fd.append("message", message.trim());
+    if (email.trim()) fd.append("email", email.trim());
+    fetcher.submit(fd, { method: "post", action: "/app/feedback" });
+  }
+
+  return (
+    <>
+      {/* Toast notification */}
+      {toastMsg && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 24,
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "#008060",
+            color: "#fff",
+            padding: "12px 24px",
+            borderRadius: 8,
+            fontSize: 14,
+            fontWeight: 500,
+            zIndex: 10001,
+            boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
+            pointerEvents: "none",
+          }}
+        >
+          ✓ {toastMsg}
+        </div>
+      )}
+
+      {/* Backdrop */}
+      <div
+        role="button"
+        tabIndex={-1}
+        aria-label="Close feedback modal"
+        onClick={onClose}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onClose(); }}
+        style={{
+          position: "fixed", inset: 0,
+          background: "rgba(0,0,0,0.45)",
+          zIndex: 9998,
+        }}
+      />
+
+      {/* Modal */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="feedback-modal-title"
+        style={{
+          position: "fixed",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%,-50%)",
+          width: "min(520px, 92vw)",
+          background: "#fff",
+          borderRadius: 12,
+          boxShadow: "0 8px 40px rgba(0,0,0,0.22)",
+          zIndex: 9999,
+          padding: "28px 28px 24px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 20,
+        }}
+      >
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+          <div>
+            <h2 id="feedback-modal-title" style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#111827" }}>
+              Send Feedback
+            </h2>
+            <p style={{ margin: "4px 0 0", fontSize: 13, color: "#6b7280" }}>
+              Help us improve ShopMate AI — your feedback goes directly to our team.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
+              fontSize: 20,
+              lineHeight: 1,
+              color: "#9ca3af",
+              padding: "2px 4px",
+              borderRadius: 4,
+              flexShrink: 0,
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {/* Message */}
+          <div>
+            <label
+              htmlFor="feedback-message"
+              style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}
+            >
+              Your feedback <span style={{ color: "#ef4444" }}>*</span>
+            </label>
+            <textarea
+              id="feedback-message"
+              ref={textareaRef}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              required
+              rows={5}
+              maxLength={5000}
+              placeholder="What's working well? What could be better? Any features you'd love to see?"
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                fontSize: 14,
+                fontFamily: "inherit",
+                resize: "vertical",
+                outline: "none",
+                boxSizing: "border-box",
+                color: "#111827",
+                background: "#fff",
+              }}
+            />
+            <p style={{ margin: "4px 0 0", fontSize: 11, color: "#9ca3af", textAlign: "right" }}>
+              {message.length} / 5,000
+            </p>
+          </div>
+
+          {/* Email (optional) */}
+          <div>
+            <label
+              htmlFor="feedback-email"
+              style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}
+            >
+              Your email <span style={{ fontSize: 12, fontWeight: 400, color: "#9ca3af" }}>(optional — so we can follow up)</span>
+            </label>
+            <input
+              id="feedback-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                fontSize: 14,
+                fontFamily: "inherit",
+                outline: "none",
+                boxSizing: "border-box",
+                color: "#111827",
+                background: "#fff",
+              }}
+            />
+          </div>
+
+          {/* Server error */}
+          {serverError && (
+            <p style={{ margin: 0, fontSize: 13, color: "#dc2626", background: "#fef2f2", padding: "10px 12px", borderRadius: 6 }}>
+              ⚠ {serverError}
+            </p>
+          )}
+
+          {/* Actions */}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                padding: "9px 18px",
+                borderRadius: 8,
+                background: "transparent",
+                color: "#374151",
+                border: "1px solid #d1d5db",
+                fontSize: 14,
+                fontWeight: 500,
+                cursor: "pointer",
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting || !message.trim()}
+              style={{
+                padding: "9px 22px",
+                borderRadius: 8,
+                background: isSubmitting || !message.trim() ? "#6b7280" : "#008060",
+                color: "#fff",
+                border: "none",
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: isSubmitting || !message.trim() ? "not-allowed" : "pointer",
+                transition: "background .15s",
+              }}
+            >
+              {isSubmitting ? "Sending…" : "Send Feedback"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </>
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
@@ -418,6 +663,7 @@ export default function Dashboard() {
   } = useLoaderData<typeof loader>();
 
   const navigate = useNavigate();
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   const isPro = plan === "pro";
 
@@ -512,12 +758,38 @@ export default function Dashboard() {
         )}
       </div>
 
-      <div>
-        <h2 className="text-xl font-semibold text-foreground">Overview</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Your ShopMate AI performance this week
-        </p>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" as const }}>
+        <div>
+          <h2 className="text-xl font-semibold text-foreground">Overview</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Your ShopMate AI performance this week
+          </p>
+        </div>
+        <button
+          onClick={() => setFeedbackOpen(true)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 7,
+            padding: "8px 16px",
+            borderRadius: 8,
+            background: "#f3f4f6",
+            color: "#374151",
+            border: "1px solid #d1d5db",
+            fontSize: 13,
+            fontWeight: 500,
+            cursor: "pointer",
+            whiteSpace: "nowrap" as const,
+            flexShrink: 0,
+          }}
+        >
+          <MessageCircle size={15} />
+          Send Feedback
+        </button>
       </div>
+
+      {/* Feedback modal — rendered at root of the component so it overlays everything */}
+      {feedbackOpen && <FeedbackModal onClose={() => setFeedbackOpen(false)} />}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
