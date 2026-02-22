@@ -35,6 +35,15 @@
   // API_BASE is "" — kept for backward compat if someone sets it.
   const API_URL = API_BASE + "/apps/shopmate/chat";
 
+  // ── Exit-intent / idle nudge config ────────────────────────────────────────
+  // exitIntent: false → disabled entirely. Default: true.
+  // exitIntentDelay: ms of inactivity before nudge shows. Default: 30000 (30s).
+  // exitIntentMessage: override the nudge text.
+  const EXIT_INTENT_ENABLED = cfg.exitIntent !== false;
+  const EXIT_INTENT_DELAY   = typeof cfg.exitIntentDelay === "number" ? cfg.exitIntentDelay : 30000;
+  const EXIT_INTENT_MSG     = cfg.exitIntentMessage || "\uD83D\uDC4B Need help? I\u2019m here!";
+  const EXIT_SESSION_KEY    = "shopmate_nudge_done"; // sessionStorage flag
+
   console.log("[ShopMate] Initialising. API_URL:", API_URL, "| SHOP:", SHOP);
 
   // ── State ──────────────────────────────────────────────────────────────
@@ -44,6 +53,10 @@
   let messages = [{ role: "bot", text: GREETING }];
   // Chips are shown until the user sends their first real message.
   let chipsVisible = QUICK_REPLIES.length > 0;
+  // Exit-intent nudge — shown once per session
+  let nudgeShown = false;
+  let nudgeEl = null;
+  let idleTimer = null;
 
   // ── DOM refs ────────────────────────────────────────────────────────────
   let widget, bubble, panel, msgList, inputEl, sendBtn;
@@ -224,6 +237,68 @@
     }
     .sm-send:disabled { opacity: .45; cursor: default; }
     .sm-send svg { width: 16px; height: 16px; }
+
+    /* Exit-intent / idle nudge */
+    #shopmate-nudge {
+      position: fixed;
+      ${POSITION === "bottom-left" ? "left: 10px;" : "right: 10px;"}
+      bottom: 88px;
+      max-width: 220px;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,.15);
+      padding: 10px 14px 10px 12px;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      z-index: 2147483644;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 13px;
+      line-height: 1.4;
+      color: #111827;
+      cursor: pointer;
+      transition: opacity .2s ease, transform .2s ease;
+      animation: sm-nudge-in .3s ease forwards;
+    }
+    #shopmate-nudge.sm-nudge-out {
+      opacity: 0;
+      transform: translateY(8px) scale(.96);
+      pointer-events: none;
+    }
+    @keyframes sm-nudge-in {
+      from { opacity: 0; transform: translateY(8px) scale(.96); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    #shopmate-nudge-close {
+      position: absolute;
+      top: 6px;
+      right: 8px;
+      background: none;
+      border: none;
+      font-size: 14px;
+      line-height: 1;
+      color: #9ca3af;
+      cursor: pointer;
+      padding: 0;
+    }
+    #shopmate-nudge-close:hover { color: #374151; }
+    #shopmate-nudge-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: ${PRIMARY};
+      flex-shrink: 0;
+      margin-top: 4px;
+    }
+    /* Attention pulse on the bubble when nudge is visible */
+    #shopmate-widget-bubble.sm-pulse {
+      box-shadow: 0 4px 16px rgba(0,0,0,.22), 0 0 0 0 ${PRIMARY};
+      animation: sm-pulse-ring 1.6s ease-out infinite;
+    }
+    @keyframes sm-pulse-ring {
+      0%   { box-shadow: 0 4px 16px rgba(0,0,0,.22), 0 0 0 0 ${PRIMARY}88; }
+      70%  { box-shadow: 0 4px 16px rgba(0,0,0,.22), 0 0 0 12px ${PRIMARY}00; }
+      100% { box-shadow: 0 4px 16px rgba(0,0,0,.22), 0 0 0 0 ${PRIMARY}00; }
+    }
   `;
   document.head.appendChild(style);
 
@@ -456,9 +531,90 @@
     if (isOpen) {
       panel.classList.remove("sm-hidden");
       inputEl.focus();
+      hideNudge(true); // opening chat counts as "done"
     } else {
       panel.classList.add("sm-hidden");
     }
+  }
+
+  // ── Exit-intent nudge ────────────────────────────────────────────────────
+  function showNudge() {
+    // Only once per session; don't show if panel already open
+    if (nudgeShown || isOpen || sessionStorage.getItem(EXIT_SESSION_KEY)) return;
+    nudgeShown = true;
+
+    nudgeEl = document.createElement("div");
+    nudgeEl.id = "shopmate-nudge";
+    nudgeEl.innerHTML = `
+      <button id="shopmate-nudge-close" aria-label="Dismiss">&times;</button>
+      <div id="shopmate-nudge-dot"></div>
+      <span>${escHtml(EXIT_INTENT_MSG)}</span>
+    `;
+
+    // Click anywhere on the nudge → open chat
+    nudgeEl.addEventListener("click", function(e) {
+      if (e.target.id === "shopmate-nudge-close") {
+        e.stopPropagation();
+        hideNudge(true);
+        return;
+      }
+      hideNudge(false);
+      if (!isOpen) togglePanel();
+    });
+
+    document.body.appendChild(nudgeEl);
+    bubble.classList.add("sm-pulse");
+
+    // Auto-hide after 8 seconds (don't be annoying)
+    setTimeout(function() { hideNudge(false); }, 8000);
+  }
+
+  function hideNudge(markDone) {
+    if (nudgeEl) {
+      nudgeEl.classList.add("sm-nudge-out");
+      var el = nudgeEl;
+      setTimeout(function() { if (el.parentNode) el.parentNode.removeChild(el); }, 220);
+      nudgeEl = null;
+    }
+    bubble.classList.remove("sm-pulse");
+    if (markDone) {
+      sessionStorage.setItem(EXIT_SESSION_KEY, "1");
+    }
+    clearIdleTimer();
+  }
+
+  // ── Idle / exit-intent detection ─────────────────────────────────────────
+  function clearIdleTimer() {
+    if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+  }
+
+  function resetIdleTimer() {
+    if (!EXIT_INTENT_ENABLED) return;
+    if (sessionStorage.getItem(EXIT_SESSION_KEY)) return; // already done this session
+    clearIdleTimer();
+    idleTimer = setTimeout(showNudge, EXIT_INTENT_DELAY);
+  }
+
+  function initExitIntent() {
+    if (!EXIT_INTENT_ENABLED) return;
+    if (sessionStorage.getItem(EXIT_SESSION_KEY)) return;
+
+    // Idle detection — reset timer on any user activity
+    var activityEvents = ["mousemove", "mousedown", "touchstart", "keydown", "scroll", "click"];
+    activityEvents.forEach(function(ev) {
+      document.addEventListener(ev, resetIdleTimer, { passive: true });
+    });
+
+    // Classic exit-intent: mouse leaves viewport toward the top
+    document.addEventListener("mouseleave", function(e) {
+      if (e.clientY < window.innerHeight * 0.08) {
+        // Cursor moved to the top 8% of the screen — likely leaving the tab
+        showNudge();
+      }
+    });
+
+    // Kick off the idle timer immediately
+    resetIdleTimer();
   }
 
   // ── Build DOM ─────────────────────────────────────────────────────────────
@@ -541,6 +697,9 @@
 
     renderMessages();
     console.log("[ShopMate] Widget ready. sendBtn in DOM:", document.body.contains(sendBtn));
+
+    // Start exit-intent / idle nudge detection
+    initExitIntent();
   }
 
   if (document.readyState === "loading") {
