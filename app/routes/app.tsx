@@ -1,5 +1,5 @@
 import type { LoaderFunctionArgs } from "react-router";
-import { Outlet, useLoaderData, useRouteError } from "react-router";
+import { Outlet, useLoaderData } from "react-router";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { NavMenu } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -41,12 +41,14 @@ export default function AppLayout() {
 export const headers = (headersArgs: Parameters<typeof boundary.headers>[0]) =>
   boundary.headers(headersArgs);
 
-// ErrorBoundary on the layout route ONLY handles auth redirects from the
-// layout loader itself. boundary.error() fires a postMessage to App Bridge
-// to trigger OAuth in the parent frame — it does NOT navigate React Router,
-// so the NavMenu is NOT unmounted by this boundary triggering.
-// Child routes each have their own boundary.error() for their own errors.
-export function ErrorBoundary() {
-  const error = useRouteError();
-  return boundary.error(error);
-}
+// NOTE: No ErrorBoundary on the layout route.
+//
+// boundary.error() renders a <div> WITHOUT AppProvider/NavMenu. When it fires
+// on first-load auth (authenticate.admin throws a redirect), App Bridge sees
+// NavMenu vanish and permanently removes all nav items from the Shopify Admin
+// sidebar — they never come back until the merchant reinstalls.
+//
+// Instead, auth redirect Responses bubble up to root.tsx's ErrorBoundary which
+// re-throws raw Response objects so React Router executes the redirect natively.
+// Child routes each export their own boundary.error() ErrorBoundary for their
+// own loader/action errors.

@@ -48,32 +48,34 @@ export default function App() {
 /**
  * Root ErrorBoundary
  *
- * IMPORTANT: authenticate.admin() throws a Response when it needs to redirect
- * (e.g. to /auth on first load before a session token exists). If we catch
- * that Response here and render an error page, the auth flow is broken —
- * the merchant sees "Something went wrong" instead of being redirected.
+ * authenticate.admin() throws a raw Response (302 redirect to /auth) on first
+ * load before a session token exists.  We must NOT swallow that redirect —
+ * we need to re-throw it so React Router's own error-handling forwards the
+ * browser to the OAuth URL.
  *
- * Fix: check if the error is a Response. If it is, re-throw it so React
- * Router's own response-handling bubbles it back up as a redirect.
- * Only render the error UI for genuine application errors (Error instances).
+ * Two cases to re-throw (let React Router handle natively):
+ *  1. Raw Response objects (redirects from authenticate.admin())
+ *  2. React Router ErrorResponse objects (isRouteErrorResponse)
  *
- * The "works on refresh" symptom is the exact tell: first load has no token →
- * SDK throws a redirect Response → ErrorBoundary swallows it → shows error.
- * Refresh: Shopify injects a token into the URL → authenticate.admin() succeeds.
+ * Only render an error UI for genuine JS errors (Error instances).
  */
 export function ErrorBoundary() {
   const error = useRouteError();
 
-  // If the SDK threw a redirect Response (e.g. to /auth), re-throw it so
-  // React Router handles the redirect instead of rendering an error page.
-  if (isRouteErrorResponse(error)) {
-    // isRouteErrorResponse covers 3xx redirects and 4xx/5xx HTTP responses.
-    // Re-throwing causes React Router to handle it natively (redirect/404 page).
+  // Case 1: Raw Response thrown by authenticate.admin() (e.g. 302 → /auth)
+  // Re-throwing a Response lets React Router execute the redirect natively.
+  if (error instanceof Response) {
     throw error;
   }
 
-  // For genuine JS errors, render a minimal error page that still loads
-  // App Bridge so Shopify's checker can detect it even on the error path.
+  // Case 2: React Router ErrorResponse (4xx/5xx route errors)
+  // Re-throwing lets React Router render its own 404/error page.
+  if (isRouteErrorResponse(error)) {
+    throw error;
+  }
+
+  // Genuine JS errors — render a minimal page that still loads App Bridge
+  // so Shopify's automated checker can detect the script tag.
   return (
     <html>
       <head>
