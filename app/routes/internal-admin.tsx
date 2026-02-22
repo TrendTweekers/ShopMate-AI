@@ -1,9 +1,8 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
-import { json, redirect } from "react-router";
 import { useLoaderData, Form, useActionData } from "react-router";
 import { useState } from "react";
 import prisma from "~/db.server";
-import { ChevronDown, Search, Save, Zap } from "lucide-react";
+import { ChevronDown, Search, Zap } from "lucide-react";
 
 // ─── Type Definitions ─────────────────────────────────────────────────────
 
@@ -69,7 +68,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const adminPassword = process.env.ADMIN_PASSWORD;
 
   if (!adminPassword || password !== adminPassword) {
-    return json({ error: "Unauthorized" }, { status: 404 });
+    throw new Response("Unauthorized", { status: 404 });
   }
 
   // Fetch all shops with stats
@@ -136,7 +135,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     storesAtRisk: stores.filter((s) => s.healthScore === "red").length,
   };
 
-  return json({ stores, globalStats });
+  return { stores, globalStats };
 };
 
 // ─── Action ───────────────────────────────────────────────────────────────
@@ -148,11 +147,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const adminPassword = process.env.ADMIN_PASSWORD;
 
   if (!adminPassword || password !== adminPassword) {
-    return json({ error: "Unauthorized" }, { status: 404 });
+    throw new Response("Unauthorized", { status: 404 });
   }
 
   if (request.method !== "POST") {
-    return json({ error: "Method not allowed" }, { status: 405 });
+    throw new Response("Method not allowed", { status: 405 });
   }
 
   const formData = await request.formData();
@@ -167,7 +166,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       data: { internalNotes: notes || null },
     });
 
-    return json({ success: true });
+    return { success: true };
   }
 
   if (action === "toggle-widget") {
@@ -179,7 +178,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       data: { widgetEnabled: !enabled },
     });
 
-    return json({ success: true });
+    return { success: true };
   }
 
   if (action === "extend-trial") {
@@ -192,7 +191,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       data: { trialEndsAt: newTrialEnd },
     });
 
-    return json({ success: true });
+    return { success: true };
   }
 
   if (action === "update-health") {
@@ -204,10 +203,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       data: { healthScore },
     });
 
-    return json({ success: true });
+    return { success: true };
   }
 
-  return json({ error: "Unknown action" }, { status: 400 });
+  throw new Response("Unknown action", { status: 400 });
 };
 
 // ─── Component ────────────────────────────────────────────────────────────
