@@ -2,56 +2,74 @@
  * importStorePolicies
  *
  * Fetches all store policies from the Shopify Admin GraphQL API and upserts
- * them into the KnowledgeBase table. Called on app install and can be
- * re-triggered manually from the Knowledge Base page.
+ * them into the KnowledgeBase table. Called on app install (afterAuth hook)
+ * and can be re-triggered manually from the Knowledge Base page.
  *
- * GraphQL field: shopPolicies — returns an array of ShopPolicy objects.
- * Each object has: type (enum), title, body, url, createdAt, updatedAt.
+ * API HISTORY
+ * -----------
+ * BROKEN (pre-2023):  query { shopPolicies { type title body } }
+ *   → shopPolicies was a root-level field that returned ShopPolicy[].
+ *   → Removed from the API; causes "Field 'shopPolicies' doesn't exist on
+ *     type 'QueryRoot'" on API version 2023-01+.
  *
- * Policy type enum values (as returned by Shopify):
- *   REFUND_POLICY | SHIPPING_POLICY | PRIVACY_POLICY | TERMS_OF_SERVICE
- *   SUBSCRIPTION_POLICY | CONTACT_INFORMATION | LEGAL_NOTICE
+ * CURRENT (2023-01+):  query { shop { privacyPolicy { body url }  ... } }
+ *   → Each policy is a named field on the Shop object.
+ *   → Fields: privacyPolicy, refundPolicy, shippingPolicy,
+ *             termsOfService, subscriptionPolicy.
+ *   → Each returns ShopPolicy { body: String, url: String } or null.
+ *   → No "type" discriminator — we use the field name instead.
  */
 
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import prisma from "~/db.server";
 
+// ─── GraphQL ──────────────────────────────────────────────────────────────────
+
 const SHOP_POLICIES_QUERY = `#graphql
   query GetShopPolicies {
-    shopPolicies {
-      type
-      title
-      body
+    shop {
+      privacyPolicy     { body url }
+      refundPolicy      { body url }
+      shippingPolicy    { body url }
+      termsOfService    { body url }
+      subscriptionPolicy { body url }
     }
   }
 `;
 
-// Map Shopify enum → our internal type string (used as the unique key)
-const TYPE_MAP: Record<string, string> = {
-  REFUND_POLICY:        "refund_policy",
-  SHIPPING_POLICY:      "shipping_policy",
-  PRIVACY_POLICY:       "privacy_policy",
-  TERMS_OF_SERVICE:     "terms_of_service",
-  SUBSCRIPTION_POLICY:  "subscription_policy",
-  CONTACT_INFORMATION:  "contact_information",
-  LEGAL_NOTICE:         "legal_notice",
-};
+// ─── Policy definitions ───────────────────────────────────────────────────────
 
-// Human-readable titles for display in the knowledge base
-const TITLE_MAP: Record<string, string> = {
-  REFUND_POLICY:        "Return Policy",
-  SHIPPING_POLICY:      "Shipping Policy",
-  PRIVACY_POLICY:       "Privacy Policy",
-  TERMS_OF_SERVICE:     "Terms of Service",
-  SUBSCRIPTION_POLICY:  "Subscription Policy",
-  CONTACT_INFORMATION:  "Contact Information",
-  LEGAL_NOTICE:         "Legal Notice",
-};
-
-interface ShopPolicy {
+// Each entry maps the GraphQL field name → our internal type + display title
+const POLICY_DEFS: Array<{
+  field: keyof ShopPolicies;
   type: string;
   title: string;
-  body: string;
+}> = [
+  { field: "refundPolicy",       type: "refund_policy",       title: "Return & Refund Policy" },
+  { field: "shippingPolicy",     type: "shipping_policy",     title: "Shipping Policy" },
+  { field: "privacyPolicy",      type: "privacy_policy",      title: "Privacy Policy" },
+  { field: "termsOfService",     type: "terms_of_service",    title: "Terms of Service" },
+  { field: "subscriptionPolicy", type: "subscription_policy", title: "Subscription Policy" },
+];
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface PolicyNode {
+  body?: string | null;
+  url?: string | null;
+}
+
+interface ShopPolicies {
+  privacyPolicy?:      PolicyNode | null;
+  refundPolicy?:       PolicyNode | null;
+  shippingPolicy?:     PolicyNode | null;
+  termsOfService?:     PolicyNode | null;
+  subscriptionPolicy?: PolicyNode | null;
+}
+
+interface GraphQLResponse {
+  data?: { shop?: ShopPolicies };
+  errors?: Array<{ message: string; locations?: unknown; path?: unknown }>;
 }
 
 interface ImportResult {
@@ -61,23 +79,27 @@ interface ImportResult {
   policies: Array<{ title: string; type: string }>;
 }
 
+// ─── HTML → plain text ────────────────────────────────────────────────────────
+
 /**
  * Strips HTML tags from a Shopify policy body.
- * Policies are stored as HTML — we want plain text for the AI context.
+ * Policies are returned as HTML — we convert to plain text for AI context.
  */
 function stripHtml(html: string): string {
   return html
-    .replace(/<\/?(p|div|li|h[1-6]|br)[^>]*>/gi, "\n") // block elements → newlines
-    .replace(/<[^>]+>/g, "")                             // strip remaining tags
+    .replace(/<\/?(p|div|li|h[1-6]|br|tr|td|th)[^>]*>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&nbsp;/g, " ")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
-    .replace(/\n{3,}/g, "\n\n")                          // collapse blank lines
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
+
+// ─── Main export ──────────────────────────────────────────────────────────────
 
 export async function importStorePolicies(
   shop: string,
@@ -85,74 +107,70 @@ export async function importStorePolicies(
 ): Promise<ImportResult> {
   const result: ImportResult = { imported: 0, skipped: 0, errors: [], policies: [] };
 
-  let policies: ShopPolicy[] = [];
+  // ── 1. Fetch from Shopify ─────────────────────────────────────────────────
+  let shopPolicies: ShopPolicies = {};
+
   try {
     const res = await admin.graphql(SHOP_POLICIES_QUERY);
-    const json = (await res.json()) as {
-      data?: { shopPolicies?: ShopPolicy[] };
-      errors?: Array<{ message: string }>;
-    };
+    const json = (await res.json()) as GraphQLResponse;
 
+    // Surface GraphQL-level errors (e.g. wrong API version, scope issues)
     if (json.errors?.length) {
-      result.errors.push(...json.errors.map((e) => e.message));
+      const msgs = json.errors.map((e) => e.message);
+      console.error(`[KnowledgeBase] GraphQL errors for ${shop}:`, msgs);
+      result.errors.push(...msgs);
       return result;
     }
 
-    policies = json.data?.shopPolicies ?? [];
+    if (!json.data?.shop) {
+      result.errors.push("Shopify returned no shop data. Check API version and read_content scope.");
+      return result;
+    }
+
+    shopPolicies = json.data.shop;
+    console.log(`[KnowledgeBase] Policies fetched for ${shop}:`,
+      POLICY_DEFS.map((d) => `${d.field}=${!!(shopPolicies[d.field]?.body)}`).join(" | "),
+    );
   } catch (err) {
-    result.errors.push(err instanceof Error ? err.message : String(err));
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[KnowledgeBase] Network/parse error for ${shop}:`, msg);
+    result.errors.push(`Failed to fetch policies: ${msg}`);
     return result;
   }
 
-  for (const policy of policies) {
-    const plainText = stripHtml(policy.body ?? "");
+  // ── 2. Upsert each policy ─────────────────────────────────────────────────
+  for (const def of POLICY_DEFS) {
+    const policy = shopPolicies[def.field];
 
-    // Skip completely empty policies (merchant hasn't written them yet)
-    if (!plainText.trim()) {
+    // Policy field is null → merchant hasn't written it in Shopify yet
+    if (!policy) {
+      console.log(`[KnowledgeBase] ${def.field} is null (not set in store) — skipping`);
       result.skipped++;
       continue;
     }
 
-    const type = TYPE_MAP[policy.type] ?? policy.type.toLowerCase();
-    const title = TITLE_MAP[policy.type] ?? policy.title;
+    const rawBody = policy.body ?? "";
+    const plainText = stripHtml(rawBody).trim();
 
-    try {
-      // Use findFirst + update/create since the DB unique constraint was
-      // removed to allow multiple custom entries per shop.
-      const existing = await prisma.knowledgeBase.findFirst({
-        where: { shop, type },
-      });
-
-      if (existing) {
-        await prisma.knowledgeBase.update({
-          where: { id: existing.id },
-          data: {
-            title,
-            content: plainText,
-            status: "active",
-            source: "shopify_import",
-          },
-        });
+    // Policy exists but has no content — skip with informative log
+    if (!plainText) {
+      console.log(`[KnowledgeBase] ${def.field} exists but body is empty — skipping`);
+      // If there's a URL, use it as minimal content so we store something useful
+      if (policy.url) {
+        const urlContent = `${def.title}\n\nFull policy: ${policy.url}`;
+        await upsertPolicy(shop, def.type, def.title, urlContent, result);
       } else {
-        await prisma.knowledgeBase.create({
-          data: {
-            shop,
-            title,
-            content: plainText,
-            type,
-            status: "active",
-            source: "shopify_import",
-          },
-        });
+        result.skipped++;
       }
-
-      result.imported++;
-      result.policies.push({ title, type });
-    } catch (err) {
-      result.errors.push(
-        `Failed to upsert ${type}: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      continue;
     }
+
+    // Append URL at the end for reference if available
+    const content = policy.url
+      ? `${plainText}\n\nFull policy: ${policy.url}`
+      : plainText;
+
+    await upsertPolicy(shop, def.type, def.title, content, result);
   }
 
   console.log(
@@ -160,4 +178,43 @@ export async function importStorePolicies(
   );
 
   return result;
+}
+
+// ─── Helper: upsert one policy entry ─────────────────────────────────────────
+
+async function upsertPolicy(
+  shop: string,
+  type: string,
+  title: string,
+  content: string,
+  result: ImportResult,
+): Promise<void> {
+  try {
+    // findFirst + update/create: the DB has no unique constraint on (shop, type)
+    // since merchants can have multiple custom entries. We match by shop + type
+    // for Shopify-imported policies to avoid creating duplicates on re-import.
+    const existing = await prisma.knowledgeBase.findFirst({
+      where: { shop, type },
+    });
+
+    if (existing) {
+      await prisma.knowledgeBase.update({
+        where: { id: existing.id },
+        data: { title, content, status: "active", source: "shopify_import" },
+      });
+      console.log(`[KnowledgeBase] Updated existing ${type} entry for ${shop}`);
+    } else {
+      await prisma.knowledgeBase.create({
+        data: { shop, title, content, type, status: "active", source: "shopify_import" },
+      });
+      console.log(`[KnowledgeBase] Created new ${type} entry for ${shop}`);
+    }
+
+    result.imported++;
+    result.policies.push({ title, type });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[KnowledgeBase] Failed to upsert ${type} for ${shop}:`, msg);
+    result.errors.push(`Failed to save "${title}": ${msg}`);
+  }
 }
