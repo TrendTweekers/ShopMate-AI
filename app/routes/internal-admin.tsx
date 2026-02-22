@@ -1,8 +1,20 @@
 import type { LoaderFunctionArgs, ActionFunctionArgs } from "react-router";
-import { useLoaderData, Form, useActionData } from "react-router";
-import { useState } from "react";
+import { useLoaderData, Form, useActionData, useFetcher } from "react-router";
+import { useState, useEffect } from "react";
 import prisma from "~/db.server";
-import { ChevronDown, Search, Zap } from "lucide-react";
+import {
+  ChevronDown,
+  Search,
+  Zap,
+  TrendingUp,
+  AlertCircle,
+  CheckCircle,
+  MessageSquare,
+  Clock,
+  DollarSign,
+  Activity,
+} from "lucide-react";
+import React from "react";
 
 // ─── Type Definitions ─────────────────────────────────────────────────────
 
@@ -10,7 +22,7 @@ interface StoreRow {
   id: string;
   shop: string;
   plan: string;
-  healthScore: string;
+  healthScore: "green" | "yellow" | "red";
   widgetEnabled: boolean;
   lastActiveAt: string | null;
   totalChats: number;
@@ -18,6 +30,8 @@ interface StoreRow {
   internalNotes: string | null;
   trialEndsAt: string | null;
   deflectionPercent: number;
+  createdAt: string;
+  daysInactive: number;
 }
 
 interface GlobalStats {
@@ -26,37 +40,45 @@ interface GlobalStats {
   totalMrr: number;
   avgDeflection: number;
   storesAtRisk: number;
+  avgRevenuePerStore: number;
+  totalChats: number;
+}
+
+interface FeedbackEntry {
+  id: string;
+  shop: string;
+  message: string;
+  email: string | null;
+  createdAt: string;
+  replied: boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
-function calculateHealthScore(stats: {
-  lastActiveAt?: Date | null;
-  plan: string;
-  totalChats: number;
-}): "green" | "yellow" | "red" {
-  const daysSinceActive = stats.lastActiveAt
-    ? Math.floor((Date.now() - stats.lastActiveAt.getTime()) / (1000 * 60 * 60 * 24))
-    : 999;
+function calculateDaysInactive(lastActiveAt: Date | null): number {
+  if (!lastActiveAt) return 999;
+  return Math.floor((Date.now() - lastActiveAt.getTime()) / (1000 * 60 * 60 * 24));
+}
 
-  // Red: inactive for 30+ days, or free plan with no chats
-  if (daysSinceActive >= 30 || (stats.plan === "free" && stats.totalChats === 0)) {
+function calculateAutoHealthScore(daysInactive: number, totalChats: number): "green" | "yellow" | "red" {
+  // Red: inactive for >7 days OR never had any chats
+  if (daysInactive > 7 || (daysInactive === 999 && totalChats === 0)) {
     return "red";
   }
 
-  // Yellow: inactive for 7+ days
-  if (daysSinceActive >= 7) {
+  // Yellow: inactive for 3-7 days
+  if (daysInactive >= 3) {
     return "yellow";
   }
 
-  // Green: active within last 7 days
+  // Green: active within last 3 days
   return "green";
 }
 
-function calculateDeflectionPercent(chats: number, messages: number): number {
+function calculateDeflectionPercent(chats: number): number {
   if (chats === 0) return 0;
-  // Rough estimate: deflection = (messages / chats) / 10, capped at 100%
-  return Math.min(100, Math.round((messages / chats / 10) * 100));
+  // Base deflection: chats that handled customer inquiries without escalation
+  return Math.min(100, Math.round((chats * 0.7) * 10)); // Rough estimate
 }
 
 // ─── Loader ───────────────────────────────────────────────────────────────
@@ -83,6 +105,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       totalAiRevenue: true,
       internalNotes: true,
       trialEndsAt: true,
+      createdAt: true,
     },
   });
 
@@ -92,16 +115,30 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     _count: { id: true },
   });
 
-  // Build store rows
+  // Fetch feedback entries
+  const feedbackEntries = await prisma.feedback.findMany({
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      shop: true,
+      message: true,
+      email: true,
+      createdAt: true,
+    },
+  });
+
+  // Build store rows with auto-calculated health
   const stores: StoreRow[] = allSettings.map((settings) => {
     const chatCount = chatCounts.find((c) => c.shop === settings.shop)?._count.id || 0;
-    const deflectionPercent = calculateDeflectionPercent(chatCount, 0);
+    const daysInactive = calculateDaysInactive(settings.lastActiveAt);
+    const autoHealthScore = calculateAutoHealthScore(daysInactive, chatCount);
+    const deflectionPercent = calculateDeflectionPercent(chatCount);
 
     return {
       id: settings.id,
       shop: settings.shop,
       plan: settings.plan,
-      healthScore: settings.healthScore,
+      healthScore: autoHealthScore,
       widgetEnabled: settings.widgetEnabled,
       lastActiveAt: settings.lastActiveAt?.toISOString() || null,
       totalChats: chatCount,
@@ -109,10 +146,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       internalNotes: settings.internalNotes,
       trialEndsAt: settings.trialEndsAt?.toISOString() || null,
       deflectionPercent,
+      createdAt: settings.createdAt.toISOString(),
+      daysInactive,
     };
   });
 
   // Calculate global stats
+  const totalChats = stores.reduce((sum, s) => sum + s.totalChats, 0);
   const globalStats: GlobalStats = {
     totalStores: stores.length,
     activePlans: stores.reduce(
@@ -124,14 +164,29 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     ),
     totalMrr: stores
       .filter((s) => s.plan === "pro")
-      .reduce((sum, s) => sum + (s.totalAiRevenue / 12 || 0), 0), // rough MRR
+      .reduce((sum, s) => sum + (s.totalAiRevenue / 12 || 0), 0),
     avgDeflection: stores.length
       ? Math.round(stores.reduce((sum, s) => sum + s.deflectionPercent, 0) / stores.length)
       : 0,
     storesAtRisk: stores.filter((s) => s.healthScore === "red").length,
+    avgRevenuePerStore:
+      stores.length > 0
+        ? Math.round((stores.reduce((sum, s) => sum + s.totalAiRevenue, 0) / stores.length) * 100) / 100
+        : 0,
+    totalChats,
   };
 
-  return { stores, globalStats };
+  // Map feedback with replied status (for now, assume not replied)
+  const feedback: FeedbackEntry[] = feedbackEntries.map((f) => ({
+    id: f.id,
+    shop: f.shop,
+    message: f.message,
+    email: f.email,
+    createdAt: f.createdAt.toISOString(),
+    replied: false, // TODO: track replied status in DB
+  }));
+
+  return { stores, globalStats, feedback };
 };
 
 // ─── Action ───────────────────────────────────────────────────────────────
@@ -162,32 +217,46 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       data: { internalNotes: notes || null },
     });
 
-    return { success: true };
+    return { success: true, type: "update-notes" };
   }
 
   if (action === "toggle-widget") {
     const shopId = formData.get("shopId") as string;
-    const enabled = formData.get("enabled") === "true";
+
+    const current = await prisma.shopSettings.findUnique({
+      where: { id: shopId },
+      select: { widgetEnabled: true },
+    });
 
     await prisma.shopSettings.update({
       where: { id: shopId },
-      data: { widgetEnabled: !enabled },
+      data: { widgetEnabled: !current?.widgetEnabled },
     });
 
-    return { success: true };
+    return { success: true, type: "toggle-widget", widgetEnabled: !current?.widgetEnabled };
   }
 
   if (action === "extend-trial") {
     const shopId = formData.get("shopId") as string;
-    const newTrialEnd = new Date();
+
+    const current = await prisma.shopSettings.findUnique({
+      where: { id: shopId },
+      select: { trialEndsAt: true },
+    });
+
+    const newTrialEnd = current?.trialEndsAt ? new Date(current.trialEndsAt) : new Date();
     newTrialEnd.setDate(newTrialEnd.getDate() + 7);
 
-    await prisma.shopSettings.update({
+    const updated = await prisma.shopSettings.update({
       where: { id: shopId },
       data: { trialEndsAt: newTrialEnd },
     });
 
-    return { success: true };
+    return {
+      success: true,
+      type: "extend-trial",
+      newTrialEnd: updated.trialEndsAt?.toISOString(),
+    };
   }
 
   if (action === "update-health") {
@@ -199,7 +268,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       data: { healthScore },
     });
 
-    return { success: true };
+    return { success: true, type: "update-health" };
   }
 
   throw new Response("Unknown action", { status: 400 });
@@ -208,156 +277,266 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 // ─── Component ────────────────────────────────────────────────────────────
 
 export default function InternalAdminDashboard() {
-  const { stores, globalStats } = useLoaderData<typeof loader>();
+  const { stores, globalStats, feedback } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [expandedStore, setExpandedStore] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortBy, setSortBy] = useState<"domain" | "plan" | "health" | "revenue">("domain");
+  const [sortBy, setSortBy] = useState<"domain" | "plan" | "health" | "revenue" | "activity">(
+    "activity",
+  );
+  const [activeTab, setActiveTab] = useState<"stores" | "feedback">("stores");
 
   const filteredStores = stores
     .filter((s) => s.shop.toLowerCase().includes(searchQuery.toLowerCase()))
     .sort((a, b) => {
       if (sortBy === "domain") return a.shop.localeCompare(b.shop);
-      if (sortBy === "plan") return a.plan.localeCompare(b.plan);
-      if (sortBy === "health") return b.healthScore.localeCompare(a.healthScore);
+      if (sortBy === "plan") return b.plan.localeCompare(a.plan);
+      if (sortBy === "health") {
+        const healthOrder = { red: 0, yellow: 1, green: 2 };
+        return healthOrder[b.healthScore] - healthOrder[a.healthScore];
+      }
       if (sortBy === "revenue") return b.totalAiRevenue - a.totalAiRevenue;
+      if (sortBy === "activity") return a.daysInactive - b.daysInactive;
       return 0;
     });
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-8">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-slate-900 mb-2">Internal Admin Dashboard</h1>
-          <p className="text-slate-600">Founder-only view. Store performance, metrics, and tools.</p>
+    <div className="min-h-screen bg-slate-900">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-slate-800 to-slate-900 border-b border-slate-700 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-6 py-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-white">ShopMate Admin</h1>
+              <p className="text-slate-400 text-sm mt-1">Beta Program Management</p>
+            </div>
+            <div className="text-right">
+              <div className="text-slate-400 text-xs">Store Metrics</div>
+              <div className="text-white font-semibold">{globalStats.totalStores} Active</div>
+            </div>
+          </div>
         </div>
+      </div>
 
-        {/* Global Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      <div className="max-w-7xl mx-auto px-6 py-8">
+        {/* Global Stats Grid */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
           <StatCard
             label="Total Stores"
-            value={globalStats.totalStores.toString()}
-            icon="📊"
+            value={globalStats.totalStores}
+            icon={<Activity className="w-5 h-5" />}
+            trend={null}
           />
           <StatCard
-            label="Active (Pro)"
-            value={globalStats.activePlans["pro"]?.toString() || "0"}
-            icon="🟢"
+            label="Pro Plans"
+            value={globalStats.activePlans["pro"] || 0}
+            icon={<TrendingUp className="w-5 h-5 text-blue-400" />}
+            trend={null}
           />
           <StatCard
-            label="Avg Deflection"
-            value={`${globalStats.avgDeflection}%`}
-            icon="📈"
+            label="Total Chats"
+            value={globalStats.totalChats}
+            icon={<MessageSquare className="w-5 h-5 text-green-400" />}
+            trend={null}
           />
           <StatCard
             label="At Risk"
-            value={globalStats.storesAtRisk.toString()}
-            icon="⚠️"
+            value={globalStats.storesAtRisk}
+            icon={<AlertCircle className="w-5 h-5 text-red-400" />}
+            trend={`${Math.round((globalStats.storesAtRisk / globalStats.totalStores) * 100)}%`}
+          />
+          <StatCard
+            label="Avg Revenue"
+            value={`$${globalStats.avgRevenuePerStore.toFixed(0)}`}
+            icon={<DollarSign className="w-5 h-5 text-green-400" />}
+            trend={null}
+          />
+          <StatCard
+            label="Monthly MRR"
+            value={`$${Math.round(globalStats.totalMrr)}`}
+            icon={<TrendingUp className="w-5 h-5 text-purple-400" />}
+            trend={null}
           />
         </div>
 
-        {/* Search & Sort */}
-        <div className="bg-white rounded-lg shadow-sm p-4 mb-6 flex gap-4 items-center">
-          <Search className="text-slate-400" size={20} />
-          <input
-            type="text"
-            placeholder="Search by domain..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="flex-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as any)}
-            className="px-3 py-2 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="domain">Sort: Domain</option>
-            <option value="plan">Sort: Plan</option>
-            <option value="health">Sort: Health</option>
-            <option value="revenue">Sort: Revenue</option>
-          </select>
+        {/* Tabs */}
+        <div className="mb-6 border-b border-slate-700">
+          <div className="flex gap-6">
+            <button
+              onClick={() => setActiveTab("stores")}
+              className={`px-4 py-3 font-medium border-b-2 transition ${
+                activeTab === "stores"
+                  ? "border-blue-500 text-white"
+                  : "border-transparent text-slate-400 hover:text-slate-300"
+              }`}
+            >
+              Stores ({globalStats.totalStores})
+            </button>
+            <button
+              onClick={() => setActiveTab("feedback")}
+              className={`px-4 py-3 font-medium border-b-2 transition ${
+                activeTab === "feedback"
+                  ? "border-blue-500 text-white"
+                  : "border-transparent text-slate-400 hover:text-slate-300"
+              }`}
+            >
+              Feedback ({feedback.length})
+            </button>
+          </div>
         </div>
 
-        {/* Stores Table */}
-        <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50">
-                <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Domain</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Plan</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Health</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Active</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Chats</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Revenue</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredStores.map((store) => (
-                <React.Fragment key={store.id}>
-                  <tr
-                    className="border-b border-slate-200 hover:bg-slate-50 cursor-pointer transition"
-                    onClick={() =>
-                      setExpandedStore(expandedStore === store.id ? null : store.id)
-                    }
-                  >
-                    <td className="px-6 py-4 text-sm font-medium text-slate-900">{store.shop}</td>
-                    <td className="px-6 py-4 text-sm">
-                      <span
-                        className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                          store.plan === "pro"
-                            ? "bg-blue-100 text-blue-700"
-                            : "bg-gray-100 text-gray-700"
-                        }`}
-                      >
-                        {store.plan}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      <HealthBadge score={store.healthScore} />
-                    </td>
-                    <td className="px-6 py-4 text-sm text-slate-600">
-                      {store.lastActiveAt
-                        ? formatTimeAgo(new Date(store.lastActiveAt))
-                        : "Never"}
-                    </td>
-                    <td className="px-6 py-4 text-sm font-medium text-slate-900">
-                      {store.totalChats}
-                    </td>
-                    <td className="px-6 py-4 text-sm font-semibold text-green-600">
-                      ${store.totalAiRevenue.toFixed(2)}
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      <ChevronDown
-                        size={18}
-                        className={`transition-transform ${expandedStore === store.id ? "rotate-180" : ""}`}
-                      />
-                    </td>
-                  </tr>
+        {/* Stores Tab */}
+        {activeTab === "stores" && (
+          <>
+            {/* Search & Sort */}
+            <div className="bg-slate-800 rounded-lg border border-slate-700 p-4 mb-6 flex flex-col sm:flex-row gap-4 items-stretch sm:items-center">
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-3 text-slate-500" size={18} />
+                <input
+                  type="text"
+                  placeholder="Search by domain..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                className="px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="activity">Sort: Activity</option>
+                <option value="domain">Sort: Domain (A-Z)</option>
+                <option value="plan">Sort: Plan</option>
+                <option value="health">Sort: Health Status</option>
+                <option value="revenue">Sort: Revenue</option>
+              </select>
+            </div>
 
-                  {/* Expanded Row */}
-                  {expandedStore === store.id && (
-                    <tr className="bg-slate-50 border-b border-slate-200">
-                      <td colSpan={7} className="px-6 py-6">
-                        <StoreDetailPanel store={store} />
-                      </td>
+            {/* Stores Table */}
+            <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-slate-900 border-b border-slate-700">
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase tracking-wide">
+                        Domain
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase tracking-wide">
+                        Plan
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase tracking-wide">
+                        Health
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase tracking-wide">
+                        Last Active
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase tracking-wide">
+                        Chats
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase tracking-wide">
+                        Revenue
+                      </th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase tracking-wide">
+                        Widget
+                      </th>
+                      <th className="px-6 py-4 w-8"></th>
                     </tr>
-                  )}
-                </React.Fragment>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  </thead>
+                  <tbody>
+                    {filteredStores.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="px-6 py-8 text-center">
+                          <p className="text-slate-400">No stores found</p>
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredStores.map((store) => (
+                        <React.Fragment key={store.id}>
+                          <tr
+                            className="border-b border-slate-700 hover:bg-slate-700 transition cursor-pointer"
+                            onClick={() =>
+                              setExpandedStore(expandedStore === store.id ? null : store.id)
+                            }
+                          >
+                            <td className="px-6 py-4 text-sm font-medium text-white">
+                              {store.shop}
+                            </td>
+                            <td className="px-6 py-4 text-sm">
+                              <span
+                                className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                                  store.plan === "pro"
+                                    ? "bg-blue-900 text-blue-300"
+                                    : "bg-slate-700 text-slate-300"
+                                }`}
+                              >
+                                {store.plan}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-sm">
+                              <HealthBadge score={store.healthScore} />
+                            </td>
+                            <td className="px-6 py-4 text-sm text-slate-300">
+                              {store.daysInactive === 999 ? (
+                                <span className="text-slate-500">Never</span>
+                              ) : (
+                                <>
+                                  {formatTimeAgo(new Date(store.lastActiveAt!))}
+                                  <span className="text-slate-500 text-xs ml-1">
+                                    ({store.daysInactive}d)
+                                  </span>
+                                </>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 text-sm font-medium text-white">
+                              {store.totalChats}
+                            </td>
+                            <td className="px-6 py-4 text-sm font-semibold text-green-400">
+                              ${store.totalAiRevenue.toFixed(2)}
+                            </td>
+                            <td className="px-6 py-4 text-sm">
+                              <span
+                                className={`text-xs font-semibold px-2 py-1 rounded ${
+                                  store.widgetEnabled
+                                    ? "bg-green-900 text-green-300"
+                                    : "bg-slate-700 text-slate-400"
+                                }`}
+                              >
+                                {store.widgetEnabled ? "ON" : "OFF"}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <ChevronDown
+                                size={18}
+                                className={`text-slate-400 transition-transform ${
+                                  expandedStore === store.id ? "rotate-180" : ""
+                                }`}
+                              />
+                            </td>
+                          </tr>
 
-        {/* Feedback Inbox Section */}
-        <div className="mt-8 bg-white rounded-lg shadow-sm p-6">
-          <h2 className="text-xl font-bold text-slate-900 mb-4">Feedback Inbox</h2>
-          <p className="text-slate-600 text-sm">
-            Recent merchant feedback submissions will appear here. (Requires Feedback table
-            populated)
-          </p>
-        </div>
+                          {/* Expanded Row */}
+                          {expandedStore === store.id && (
+                            <tr className="bg-slate-750 border-b border-slate-700">
+                              <td colSpan={8} className="px-6 py-6">
+                                <StoreDetailPanel store={store} />
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Feedback Tab */}
+        {activeTab === "feedback" && (
+          <FeedbackInbox entries={feedback} />
+        )}
       </div>
     </div>
   );
@@ -367,28 +546,48 @@ export default function InternalAdminDashboard() {
 
 interface StatCardProps {
   label: string;
-  value: string;
-  icon: string;
+  value: string | number;
+  icon: React.ReactNode;
+  trend: string | null;
 }
 
-function StatCard({ label, value, icon }: StatCardProps) {
+function StatCard({ label, value, icon, trend }: StatCardProps) {
   return (
-    <div className="bg-white rounded-lg shadow-sm p-4 border-l-4 border-blue-500">
-      <div className="text-2xl mb-2">{icon}</div>
-      <div className="text-2xl font-bold text-slate-900">{value}</div>
-      <div className="text-xs text-slate-600 mt-1">{label}</div>
+    <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 hover:bg-slate-750 transition">
+      <div className="flex items-start justify-between mb-3">
+        <div className="text-slate-400">{icon}</div>
+        {trend && <span className="text-red-400 text-sm font-semibold">{trend}</span>}
+      </div>
+      <div className="text-2xl font-bold text-white">{value}</div>
+      <div className="text-xs text-slate-400 mt-1">{label}</div>
     </div>
   );
 }
 
-function HealthBadge({ score }: { score: string }) {
-  const colors = {
-    green: "bg-green-100 text-green-700",
-    yellow: "bg-yellow-100 text-yellow-700",
-    red: "bg-red-100 text-red-700",
+function HealthBadge({ score }: { score: "green" | "yellow" | "red" }) {
+  const config = {
+    green: {
+      bg: "bg-green-900",
+      text: "text-green-300",
+      icon: "✓",
+    },
+    yellow: {
+      bg: "bg-yellow-900",
+      text: "text-yellow-300",
+      icon: "!",
+    },
+    red: {
+      bg: "bg-red-900",
+      text: "text-red-300",
+      icon: "⚠",
+    },
   };
+
+  const { bg, text, icon } = config[score];
+
   return (
-    <span className={`px-2 py-1 rounded-full text-xs font-semibold ${colors[score as keyof typeof colors]}`}>
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${bg} ${text}`}>
+      <span>{icon}</span>
       {score}
     </span>
   );
@@ -416,6 +615,8 @@ interface StoreDetailPanelProps {
 function StoreDetailPanel({ store }: StoreDetailPanelProps) {
   const [notes, setNotes] = useState(store.internalNotes || "");
   const [isSaving, setIsSaving] = useState(false);
+  const [selectedHealth, setSelectedHealth] = useState<"green" | "yellow" | "red">(store.healthScore);
+  const fetcher = useFetcher();
 
   const handleSaveNotes = async () => {
     setIsSaving(true);
@@ -432,87 +633,204 @@ function StoreDetailPanel({ store }: StoreDetailPanelProps) {
     setIsSaving(false);
   };
 
+  const handleExtendTrial = async () => {
+    const formData = new FormData();
+    formData.append("_action", "extend-trial");
+    formData.append("shopId", store.id);
+
+    fetcher.submit(formData, { method: "POST" });
+  };
+
+  const handleToggleWidget = async () => {
+    const formData = new FormData();
+    formData.append("_action", "toggle-widget");
+    formData.append("shopId", store.id);
+
+    fetcher.submit(formData, { method: "POST" });
+  };
+
   return (
-    <div className="grid grid-cols-2 gap-6">
-      {/* Left: Stats */}
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      {/* Left: Metrics & Trial */}
       <div>
-        <h3 className="font-semibold text-slate-900 mb-4">Store Metrics</h3>
-        <div className="space-y-3 text-sm">
-          <div className="flex justify-between">
-            <span className="text-slate-600">Total Chats:</span>
-            <span className="font-semibold">{store.totalChats}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-600">AI Revenue:</span>
-            <span className="font-semibold text-green-600">${store.totalAiRevenue.toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-600">Deflection Rate:</span>
-            <span className="font-semibold">{store.deflectionPercent}%</span>
-          </div>
+        <h3 className="text-lg font-semibold text-white mb-4">Store Metrics</h3>
+        <div className="space-y-4 bg-slate-900 rounded-lg p-4 border border-slate-700">
+          <MetricRow label="Total Chats" value={store.totalChats.toString()} />
+          <MetricRow label="AI Revenue" value={`$${store.totalAiRevenue.toFixed(2)}`} highlight />
+          <MetricRow label="Deflection Rate" value={`${store.deflectionPercent}%`} />
+          <MetricRow label="Days Inactive" value={store.daysInactive === 999 ? "Never active" : `${store.daysInactive}d`} />
           {store.trialEndsAt && (
-            <div className="flex justify-between">
-              <span className="text-slate-600">Trial Ends:</span>
-              <span className="font-semibold">{new Date(store.trialEndsAt).toLocaleDateString()}</span>
+            <MetricRow
+              label="Trial Expires"
+              value={new Date(store.trialEndsAt).toLocaleDateString()}
+            />
+          )}
+          <MetricRow label="Created" value={new Date(store.createdAt).toLocaleDateString()} />
+        </div>
+      </div>
+
+      {/* Middle: Controls */}
+      <div>
+        <h3 className="text-lg font-semibold text-white mb-4">Admin Controls</h3>
+        <div className="space-y-3">
+          {/* Widget Toggle */}
+          <div className="bg-slate-900 rounded-lg p-4 border border-slate-700">
+            <p className="text-sm text-slate-300 mb-3">Widget Status</p>
+            <button
+              onClick={handleToggleWidget}
+              className={`w-full px-4 py-2 rounded-lg font-medium transition text-sm ${
+                store.widgetEnabled
+                  ? "bg-green-900 text-green-300 hover:bg-green-800"
+                  : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+              }`}
+            >
+              {store.widgetEnabled ? "✓ Widget: ON" : "✗ Widget: OFF"}
+            </button>
+          </div>
+
+          {/* Health Override */}
+          <div className="bg-slate-900 rounded-lg p-4 border border-slate-700">
+            <p className="text-sm text-slate-300 mb-3">Health Override</p>
+            <select
+              value={selectedHealth}
+              onChange={(e) => setSelectedHealth(e.target.value as any)}
+              className="w-full px-3 py-2 bg-slate-700 border border-slate-600 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="green">🟢 Green</option>
+              <option value="yellow">🟡 Yellow</option>
+              <option value="red">🔴 Red</option>
+            </select>
+            {selectedHealth !== store.healthScore && (
+              <fetcher.Form method="post" className="mt-2">
+                <input type="hidden" name="_action" value="update-health" />
+                <input type="hidden" name="shopId" value={store.id} />
+                <input type="hidden" name="healthScore" value={selectedHealth} />
+                <button
+                  type="submit"
+                  className="w-full px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition"
+                >
+                  Apply Health Change
+                </button>
+              </fetcher.Form>
+            )}
+          </div>
+
+          {/* Trial Extension */}
+          {store.plan === "free" && (
+            <div className="bg-slate-900 rounded-lg p-4 border border-slate-700">
+              <p className="text-sm text-slate-300 mb-3">Trial Management</p>
+              <button
+                onClick={handleExtendTrial}
+                className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition text-sm flex items-center justify-center gap-2"
+              >
+                <Zap size={16} />
+                Extend Trial +7d
+              </button>
+              {fetcher.data?.type === "extend-trial" && (
+                <p className="text-xs text-green-400 mt-2">✓ Trial extended</p>
+              )}
             </div>
           )}
         </div>
       </div>
 
-      {/* Right: Actions & Notes */}
+      {/* Right: Notes */}
       <div>
-        <h3 className="font-semibold text-slate-900 mb-4">Admin Controls</h3>
-        <div className="space-y-3">
-          <Form method="post" className="flex gap-2">
-            <input type="hidden" name="_action" value="toggle-widget" />
-            <input type="hidden" name="shopId" value={store.id} />
-            <input type="hidden" name="enabled" value={store.widgetEnabled.toString()} />
-            <button
-              type="submit"
-              className={`flex-1 px-3 py-2 rounded text-sm font-medium transition ${
-                store.widgetEnabled
-                  ? "bg-green-100 text-green-700 hover:bg-green-200"
-                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-              }`}
-            >
-              {store.widgetEnabled ? "Widget: ON" : "Widget: OFF"}
-            </button>
-          </Form>
-
-          {store.plan === "free" && (
-            <Form method="post">
-              <input type="hidden" name="_action" value="extend-trial" />
-              <input type="hidden" name="shopId" value={store.id} />
-              <button
-                type="submit"
-                className="w-full px-3 py-2 bg-blue-500 text-white rounded text-sm font-medium hover:bg-blue-600 transition flex items-center justify-center gap-2"
-              >
-                <Zap size={16} />
-                Extend Trial +7d
-              </button>
-            </Form>
-          )}
-        </div>
-      </div>
-
-      {/* Notes */}
-      <div className="col-span-2 border-t border-slate-200 pt-4">
-        <label className="block text-sm font-semibold text-slate-900 mb-2">Internal Notes</label>
-        <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          onBlur={handleSaveNotes}
-          placeholder="Add private notes about this store..."
-          className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-          rows={3}
-        />
-        <div className="text-xs text-slate-500 mt-1">
-          {isSaving ? "Saving..." : "Auto-saves on blur"}
+        <h3 className="text-lg font-semibold text-white mb-4">Internal Notes</h3>
+        <div className="bg-slate-900 rounded-lg p-4 border border-slate-700">
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            onBlur={handleSaveNotes}
+            placeholder="Add private notes about this store..."
+            className="w-full px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm mb-2"
+            rows={6}
+          />
+          <div className="text-xs text-slate-400">
+            {isSaving ? "🔄 Saving..." : "✓ Auto-saves on blur"}
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-// Add React import for Fragment
-import React from "react";
+function MetricRow({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) {
+  return (
+    <div className="flex justify-between items-center">
+      <span className="text-sm text-slate-400">{label}</span>
+      <span className={`font-semibold text-sm ${highlight ? "text-green-400" : "text-white"}`}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+interface FeedbackInboxProps {
+  entries: FeedbackEntry[];
+}
+
+function FeedbackInbox({ entries }: FeedbackInboxProps) {
+  const [sortBy, setSortBy] = useState<"recent" | "oldest">("recent");
+
+  const sorted = [...entries].sort((a, b) => {
+    if (sortBy === "recent") {
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    }
+    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+  });
+
+  return (
+    <div>
+      <div className="mb-4 flex justify-between items-center">
+        <p className="text-slate-400">Total feedback submissions: {entries.length}</p>
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value as any)}
+          className="px-3 py-1.5 bg-slate-800 border border-slate-700 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="recent">Most Recent</option>
+          <option value="oldest">Oldest First</option>
+        </select>
+      </div>
+
+      {sorted.length === 0 ? (
+        <div className="bg-slate-800 rounded-lg border border-slate-700 p-8 text-center">
+          <MessageSquare className="w-12 h-12 text-slate-600 mx-auto mb-3" />
+          <p className="text-slate-400">No feedback yet</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {sorted.map((entry) => (
+            <div
+              key={entry.id}
+              className="bg-slate-800 rounded-lg border border-slate-700 p-4 hover:border-slate-600 transition"
+            >
+              <div className="flex items-start justify-between mb-2">
+                <div>
+                  <p className="font-semibold text-white text-sm">{entry.shop}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    <Clock size={12} className="inline mr-1" />
+                    {new Date(entry.createdAt).toLocaleString()}
+                  </p>
+                </div>
+                {entry.email && (
+                  <a
+                    href={`mailto:${entry.email}`}
+                    className="text-blue-400 hover:text-blue-300 text-xs font-medium"
+                  >
+                    Reply
+                  </a>
+                )}
+              </div>
+              <p className="text-slate-300 text-sm leading-relaxed">{entry.message}</p>
+              {entry.email && (
+                <p className="text-xs text-slate-500 mt-3">📧 {entry.email}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
