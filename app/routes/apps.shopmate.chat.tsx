@@ -26,14 +26,16 @@ const FREE_LIMIT = 50; // messages per month on free plan
 // ─── Intent helpers ───────────────────────────────────────────────────────────
 
 function extractOrderNumber(text: string): string | null {
-  const match = text.match(/#?\b(\d{3,6})\b/);
-  return match ? `#${match[1]}` : null;
+  const match = text.match(/#?\b(\d{3,7})\b/);
+  return match ? match[1] : null; // returns bare digits, e.g. "5050"
 }
 
 function isOrderTrackingIntent(text: string): boolean {
   const lower = text.toLowerCase();
-  // Direct order number reference (e.g. #5050) always triggers tracking
+  // Bare order number reference (e.g. #5050 or "order 5050") always triggers tracking
   if (/#\d{3,}/.test(text)) return true;
+  // Digit-only that looks like an order number when combined with tracking words
+  if (/\b\d{3,7}\b/.test(text) && /track|order|status|where|shipped/.test(lower)) return true;
   // "track my order", "where is my order", "order status", etc.
   return (
     /\border\b/.test(lower) &&
@@ -55,7 +57,7 @@ function extractProductQuery(text: string): string {
     )
     .replace(/\?|please|can you|could you|i.*want|i.*need/g, "")
     .trim();
-  // If we stripped everything meaningful, fetch popular products as a general catalog response
+  // If we stripped everything meaningful, fetch all active products as a general catalog response
   return stripped || "status:active";
 }
 
@@ -77,6 +79,7 @@ const ORDER_QUERY = `#graphql
         displayFinancialStatus
         displayFulfillmentStatus
         createdAt
+        statusPageUrl
         currentTotalPriceSet { shopMoney { amount currencyCode } }
         shippingAddress { city province country }
         fulfillments(first: 1) {
@@ -111,67 +114,114 @@ interface ProductResult {
   url: string;
 }
 
-async function fetchOrderContext(admin: AdminApiContext, orderNumber: string): Promise<string> {
-  try {
-    const res = await admin.graphql(ORDER_QUERY, {
-      variables: { query: `name:${orderNumber}` },
-    });
-    const json = (await res.json()) as {
-      data?: {
-        orders?: {
-          nodes?: Array<{
-            name?: string;
-            displayFinancialStatus?: string;
-            displayFulfillmentStatus?: string;
-            createdAt?: string;
-            currentTotalPriceSet?: { shopMoney?: { amount?: string; currencyCode?: string } };
-            shippingAddress?: { city?: string; province?: string; country?: string };
-            fulfillments?: Array<{
-              trackingInfo?: Array<{ number?: string; url?: string; company?: string }>;
-              displayStatus?: string;
-              estimatedDeliveryAt?: string | null;
+// ─── fetchOrderContext ────────────────────────────────────────────────────────
+// Tries name:#NNNN and name:NNNN to handle both normalised forms.
+// Returns a structured context string for the AI, or a precise error.
+
+async function fetchOrderContext(admin: AdminApiContext, rawNumber: string): Promise<string> {
+  // Normalise: strip any leading # to get bare digits
+  const digits = rawNumber.replace(/^#/, "");
+  const withHash = `#${digits}`;
+
+  // Try both forms — some shops store orders as "#5050", others as "5050"
+  const queriesToTry = [`name:${withHash}`, `name:${digits}`];
+  console.log(`[order] Looking up order ${withHash}, trying queries:`, queriesToTry);
+
+  let lastError: string | null = null;
+
+  for (const q of queriesToTry) {
+    try {
+      const res = await admin.graphql(ORDER_QUERY, { variables: { query: q } });
+      const json = (await res.json()) as {
+        errors?: Array<{ message: string }>;
+        data?: {
+          orders?: {
+            nodes?: Array<{
+              name?: string;
+              displayFinancialStatus?: string;
+              displayFulfillmentStatus?: string;
+              createdAt?: string;
+              statusPageUrl?: string;
+              currentTotalPriceSet?: { shopMoney?: { amount?: string; currencyCode?: string } };
+              shippingAddress?: { city?: string; province?: string; country?: string };
+              fulfillments?: Array<{
+                trackingInfo?: Array<{ number?: string; url?: string; company?: string }>;
+                displayStatus?: string;
+                estimatedDeliveryAt?: string | null;
+              }>;
+              lineItems?: { nodes?: Array<{ title?: string; quantity?: number }> };
             }>;
-            lineItems?: { nodes?: Array<{ title?: string; quantity?: number }> };
-          }>;
+          };
         };
       };
-    };
 
-    const order = json?.data?.orders?.nodes?.[0];
-    if (!order) return `No order found with number ${orderNumber}. Please verify and try again.`;
+      // Check for GraphQL-level errors (e.g. missing read_orders scope)
+      if (json.errors?.length) {
+        const errMsg = json.errors.map((e) => e.message).join("; ");
+        console.error(`[order] GraphQL errors for query "${q}":`, errMsg);
+        lastError = `GraphQL error: ${errMsg}`;
+        continue;
+      }
 
-    const fulfillment = order.fulfillments?.[0];
-    const tracking = fulfillment?.trackingInfo?.[0];
-    const items = order.lineItems?.nodes?.map((li) => `${li.quantity}x ${li.title}`).join(", ");
-    const addr = order.shippingAddress;
-    const price = order.currentTotalPriceSet?.shopMoney;
+      const order = json?.data?.orders?.nodes?.[0];
+      if (!order) {
+        console.log(`[order] No order found for query "${q}"`);
+        continue; // try next form
+      }
 
-    let ctx = `ORDER FOUND — ${order.name}:
-- Status: ${order.displayFulfillmentStatus || "unfulfilled"} / ${order.displayFinancialStatus || "unknown"}
+      console.log(`[order] Found order ${order.name} via query "${q}"`);
+
+      const fulfillment = order.fulfillments?.[0];
+      const tracking = fulfillment?.trackingInfo?.[0];
+      const items = order.lineItems?.nodes?.map((li) => `${li.quantity}x ${li.title}`).join(", ");
+      const addr = order.shippingAddress;
+      const price = order.currentTotalPriceSet?.shopMoney;
+
+      let ctx = `ORDER FOUND — ${order.name}:
+- Payment: ${order.displayFinancialStatus || "unknown"}
+- Fulfillment: ${order.displayFulfillmentStatus || "unfulfilled"}
 - Date: ${order.createdAt ? new Date(order.createdAt).toLocaleDateString() : "unknown"}
 - Total: ${price ? `${price.amount} ${price.currencyCode}` : "unknown"}
 - Items: ${items || "unknown"}`;
-    if (addr)
-      ctx += `\n- Ships to: ${[addr.city, addr.province, addr.country].filter(Boolean).join(", ")}`;
-    if (fulfillment?.displayStatus) ctx += `\n- Fulfillment: ${fulfillment.displayStatus}`;
-    if (fulfillment?.estimatedDeliveryAt)
-      ctx += `\n- Est. delivery: ${new Date(fulfillment.estimatedDeliveryAt).toLocaleDateString()}`;
-    if (tracking)
-      ctx += `\n- Tracking: ${tracking.number ?? "N/A"} via ${tracking.company ?? "carrier"}${tracking.url ? ` (${tracking.url})` : ""}`;
-    return ctx;
-  } catch {
-    return "Unable to retrieve order information right now. Please try again.";
+
+      if (addr) ctx += `\n- Ships to: ${[addr.city, addr.province, addr.country].filter(Boolean).join(", ")}`;
+      if (fulfillment?.displayStatus) ctx += `\n- Status: ${fulfillment.displayStatus}`;
+      if (fulfillment?.estimatedDeliveryAt)
+        ctx += `\n- Est. delivery: ${new Date(fulfillment.estimatedDeliveryAt).toLocaleDateString()}`;
+      if (tracking) {
+        ctx += `\n- Tracking #: ${tracking.number ?? "N/A"} via ${tracking.company ?? "carrier"}`;
+        if (tracking.url) ctx += ` — Track here: ${tracking.url}`;
+      }
+      if (order.statusPageUrl) ctx += `\n- Order status page: ${order.statusPageUrl}`;
+
+      return ctx;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[order] Exception for query "${q}":`, msg);
+      lastError = msg;
+    }
   }
+
+  // All queries failed/no match
+  if (lastError) {
+    return `ORDER_LOOKUP_ERROR: ${lastError}. Could not retrieve order ${withHash}.`;
+  }
+  return `ORDER_NOT_FOUND:${withHash}`;
 }
+
+// ─── fetchProducts ────────────────────────────────────────────────────────────
+// Returns products + a diagnostic error string if the call fails.
 
 async function fetchProducts(
   admin: AdminApiContext,
   query: string,
   shop: string,
-): Promise<{ context: string; products: ProductResult[] }> {
+): Promise<{ context: string; products: ProductResult[]; error?: string }> {
+  console.log(`[products] Fetching products for shop "${shop}" with query: "${query}"`);
   try {
     const res = await admin.graphql(PRODUCTS_QUERY, { variables: { query } });
     const json = (await res.json()) as {
+      errors?: Array<{ message: string }>;
       data?: {
         products?: {
           nodes?: Array<{
@@ -185,8 +235,31 @@ async function fetchProducts(
       };
     };
 
+    // GraphQL-level errors (e.g. missing read_products scope)
+    if (json.errors?.length) {
+      const errMsg = json.errors.map((e) => e.message).join("; ");
+      console.error("[products] GraphQL errors:", errMsg);
+      const isScopeError = /access denied|read_products|unauthorized|forbidden/i.test(errMsg);
+      const reason = isScopeError
+        ? "missing scope read_products — app needs reinstall"
+        : errMsg;
+      return {
+        context: `PRODUCT_ACCESS_ERROR: ${reason}`,
+        products: [],
+        error: reason,
+      };
+    }
+
     const nodes = json?.data?.products?.nodes ?? [];
-    if (!nodes.length) return { context: "No matching products found.", products: [] };
+    console.log(`[products] Returned ${nodes.length} product(s) for query "${query}"`);
+
+    if (!nodes.length) {
+      return {
+        context: `PRODUCT_EMPTY: 0 products returned for query "${query}". Store may have no active products or the query returned no matches.`,
+        products: [],
+        error: `0 products returned for query "${query}"`,
+      };
+    }
 
     const products: ProductResult[] = nodes.map((p) => {
       const price = p.priceRangeV2?.minVariantPrice;
@@ -205,8 +278,14 @@ async function fetchProducts(
       context: `RECOMMENDED PRODUCTS:\n${products.map((p) => `- ${p.title} at ${p.price}`).join("\n")}`,
       products,
     };
-  } catch {
-    return { context: "Unable to fetch product recommendations right now.", products: [] };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[products] Exception fetching products:", msg);
+    return {
+      context: `PRODUCT_EXCEPTION: ${msg}`,
+      products: [],
+      error: msg,
+    };
   }
 }
 
@@ -266,18 +345,21 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return Response.json({ error: "Could not determine shop" }, { status: 400, headers: CORS });
   }
 
-  // ── Fallback: get admin context from stored offline token if proxy didn't provide one ──
+  // ── Fallback: get admin context from stored offline token ─────────────────
   // authenticate.public.appProxy returns adminCtx only when an offline session exists in DB.
-  // unauthenticated.admin uses the stored offline access token directly, which is always
-  // available after the merchant installs the app.
+  // unauthenticated.admin uses the stored offline access token directly.
   if (!adminCtx) {
     try {
       const fallback = await unauthenticated.admin(shop);
       adminCtx = fallback.admin;
       console.log("[appProxy] ✓ Fallback admin context obtained for shop:", shop);
     } catch (fallbackErr) {
-      console.warn("[appProxy] Could not get fallback admin context:", fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr));
-      // adminCtx stays undefined — order/product lookups will be skipped
+      const msg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+      console.warn("[appProxy] ✗ Could not get fallback admin context:", msg);
+      console.warn("[appProxy]   → Product/order features will be disabled for this request.");
+      console.warn("[appProxy]   → Cause: No offline session in DB for shop:", shop);
+      console.warn("[appProxy]   → Fix: Merchant must reinstall/re-auth the app.");
+      // adminCtx stays undefined — we continue but features are disabled
     }
   }
 
@@ -362,17 +444,41 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   // ── Intent detection + Shopify data ───────────────────────────────────────
   let extraContext = "";
   let products: ProductResult[] = [];
+  let featureError: string | undefined;
 
-  if (adminCtx) {
-    if (isOrderTrackingIntent(message)) {
-      const orderNumber = extractOrderNumber(message);
-      extraContext = orderNumber
-        ? await fetchOrderContext(adminCtx, orderNumber)
-        : "The customer asked about order tracking but did not provide an order number. Ask them for it (e.g. #1234).";
-    } else if (isProductRecommendationIntent(message)) {
-      const result = await fetchProducts(adminCtx, extractProductQuery(message), shop);
-      extraContext = result.context;
-      products = result.products;
+  if (!adminCtx) {
+    // Log clearly instead of silently skipping
+    console.warn("[appProxy] adminCtx is missing — order/product features disabled.");
+    console.warn("[appProxy] Reason: no offline session token for shop:", shop);
+    featureError = "no_admin_ctx";
+  } else if (isOrderTrackingIntent(message)) {
+    const rawNumber = extractOrderNumber(message);
+    if (rawNumber) {
+      console.log("[appProxy] Order tracking intent — order number:", rawNumber);
+      extraContext = await fetchOrderContext(adminCtx, rawNumber);
+
+      // Log the lookup outcome clearly
+      if (extraContext.startsWith("ORDER_NOT_FOUND:")) {
+        console.warn("[appProxy] Order not found:", extraContext);
+      } else if (extraContext.startsWith("ORDER_LOOKUP_ERROR:")) {
+        console.error("[appProxy] Order lookup error:", extraContext);
+      } else {
+        console.log("[appProxy] Order context retrieved successfully");
+      }
+    } else {
+      extraContext = "NEED_ORDER_NUMBER: Customer asked about order tracking but did not provide an order number. Ask them for their order number (e.g. #1234).";
+      console.log("[appProxy] Order tracking intent — no order number found in message");
+    }
+  } else if (isProductRecommendationIntent(message)) {
+    const productQuery = extractProductQuery(message);
+    console.log("[appProxy] Product recommendation intent — query:", productQuery);
+    const result = await fetchProducts(adminCtx, productQuery, shop);
+    extraContext = result.context;
+    products = result.products;
+    featureError = result.error;
+
+    if (result.error) {
+      console.error("[appProxy] Product fetch error:", result.error);
     }
   }
 
@@ -383,12 +489,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }));
 
   // ── Fetch active Knowledge Base entries for this shop ─────────────────────
-  // Only load active entries; draft entries are explicitly excluded.
   const kbEntries = await prisma.knowledgeBase.findMany({
     where: { shop, status: "active" },
     select: { title: true, content: true },
     orderBy: { updatedAt: "desc" },
-    take: 20, // cap to avoid token bloat on very large KBs
+    take: 20,
   });
 
   const kbContext = kbEntries.length > 0
@@ -397,10 +502,25 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     : "";
 
   // ── System prompt ─────────────────────────────────────────────────────────
+  // Special handling for diagnostic contexts so the AI gives precise answers
+  let extraContextForAI = "";
+  if (extraContext.startsWith("ORDER_NOT_FOUND:")) {
+    const num = extraContext.replace("ORDER_NOT_FOUND:", "");
+    extraContextForAI = `No order found matching ${num}. Possible reasons: the order number may be wrong, the order belongs to a different store, or it was placed very recently and hasn't synced. Ask the customer to double-check their confirmation email and provide the exact order number.`;
+  } else if (extraContext.startsWith("ORDER_LOOKUP_ERROR:")) {
+    extraContextForAI = `Order lookup failed with a technical error. Apologise and ask the customer to try again or contact support.`;
+  } else if (extraContext.startsWith("ORDER_LOOKUP_ERROR:") || extraContext.startsWith("PRODUCT_ACCESS_ERROR:") || extraContext.startsWith("PRODUCT_EMPTY:") || extraContext.startsWith("PRODUCT_EXCEPTION:")) {
+    extraContextForAI = `Product information is temporarily unavailable. Apologise and suggest the customer browse the store directly.`;
+  } else if (extraContext.startsWith("NEED_ORDER_NUMBER:")) {
+    extraContextForAI = "The customer asked about an order but did not provide an order number. Ask them for their order number from their confirmation email (e.g. #1234).";
+  } else {
+    extraContextForAI = extraContext;
+  }
+
   const systemPrompt = [
     `You are ShopMate, a helpful AI assistant for the Shopify store ${shop}. Help customers with order tracking, product recommendations, returns, and general questions. Be friendly, concise, and helpful.`,
     kbContext,
-    extraContext ? `\nLIVE ORDER/PRODUCT CONTEXT:\n${extraContext}` : "",
+    extraContextForAI ? `\nLIVE ORDER/PRODUCT CONTEXT:\n${extraContextForAI}` : "",
     products.length > 0 ? "\nPresent product cards after your reply. Briefly introduce them." : "",
   ]
     .filter(Boolean)
@@ -421,8 +541,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     data: { conversationId: conv.id, role: "assistant", content: reply },
   });
 
-  // ── Update review counters (merchant dashboard reads these for trigger logic) ─
-  // These counters feed the review banner in the admin dashboard — never the widget.
+  // ── Update review counters ────────────────────────────────────────────────
   const isEscalation = replyIsEscalation(reply);
   const wasOrderTracking = isOrderTrackingIntent(message) && extraContext.startsWith("ORDER FOUND");
 
@@ -445,7 +564,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       reply,
       conversationId: conv.id,
       products: products.length > 0 ? products : undefined,
-      remaining, // null = pro (unlimited), number = messages left this month
+      remaining,
+      // Dev-friendly diagnostic fields (won't affect widget UX)
+      _debug: featureError ? { featureError } : undefined,
     },
     { headers: CORS },
   );

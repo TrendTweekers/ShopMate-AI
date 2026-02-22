@@ -35,6 +35,7 @@ export default function AppLayout() {
         <a href="/app/conversations">Conversations</a>
         <a href="/app/widget-preview">Widget Preview</a>
         <a href="/app/customize">Customize</a>
+        <a href="/app/connection-test">Connection Test</a>
       </NavMenu>
       <Outlet />
     </AppProvider>

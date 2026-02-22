@@ -489,7 +489,7 @@ export default function Dashboard() {
               whiteSpace: "nowrap" as const,
             }}
           >
-            Upgrade to Pro — $29/mo
+            Upgrade to Pro — $39/mo
           </button>
         )}
       </div>
