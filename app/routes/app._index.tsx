@@ -707,8 +707,35 @@ function FeedbackModal({ onClose, feedbackSuccess }: { onClose: () => void; feed
               Cancel
             </button>
             <button
-              type="submit"
+              type="button"
               disabled={!message.trim()}
+              onClick={async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!message.trim()) return;
+                console.log("[feedback-modal] Button clicked, submitting via fetch");
+                try {
+                  const formData = new FormData();
+                  formData.append("message", message);
+                  if (email.trim()) formData.append("email", email);
+
+                  console.log("[feedback-modal] Sending fetch POST to /app/feedback");
+                  const response = await fetch("/app/feedback", {
+                    method: "POST",
+                    body: formData,
+                  });
+                  console.log("[feedback-modal] Fetch response status:", response.status);
+                  if (response.ok) {
+                    console.log("[feedback-modal] ✅ Feedback submitted successfully");
+                    setMessage("");
+                    setEmail("");
+                  } else {
+                    console.error("[feedback-modal] ❌ Fetch failed with status", response.status);
+                  }
+                } catch (err) {
+                  console.error("[feedback-modal] ❌ Fetch error:", err instanceof Error ? err.message : String(err));
+                }
+              }}
               style={{
                 padding: "10px 24px",
                 borderRadius: 8,
@@ -720,6 +747,8 @@ function FeedbackModal({ onClose, feedbackSuccess }: { onClose: () => void; feed
                 cursor: !message.trim() ? "not-allowed" : "pointer",
                 transition: "background 0.15s",
                 opacity: !message.trim() ? 0.7 : 1,
+                zIndex: 1000000,
+                position: "relative",
               }}
               onMouseEnter={(e) => {
                 if (message.trim()) {
