@@ -1,5 +1,5 @@
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { Form, useLoaderData, useNavigate, useRouteError } from "react-router";
+import { useLoaderData, useNavigate, useRouteError } from "react-router";
 import { useState, useEffect, useRef } from "react";
 import { MessageSquare, ShieldCheck, Clock, TrendingUp, Zap, DollarSign, MessageCircle } from "lucide-react";
 import KpiCard from "~/components/admin/KpiCard";
@@ -475,6 +475,7 @@ function FeedbackModal({ onClose, feedbackSuccess }: { onClose: () => void; feed
   const [message, setMessage] = useState("");
   const [email, setEmail]     = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   // Focus textarea when modal opens
   useEffect(() => { textareaRef.current?.focus(); }, []);
@@ -591,8 +592,8 @@ function FeedbackModal({ onClose, feedbackSuccess }: { onClose: () => void; feed
           </button>
         </div>
 
-        {/* Form - using React Router <Form> component for proper embedded context handling */}
-        <Form method="post" action="/app/feedback" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        {/* Form - native HTML form for maximum compatibility in embedded iframe */}
+        <form method="POST" action="/app/feedback" style={{ display: "flex", flexDirection: "column", gap: 20 }} ref={formRef}>
           {/* Message */}
           <div>
             <label
@@ -707,48 +708,14 @@ function FeedbackModal({ onClose, feedbackSuccess }: { onClose: () => void; feed
               Cancel
             </button>
             <button
-              type="button"
+              type="submit"
               disabled={!message.trim()}
-              onClick={async (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                if (!message.trim()) return;
-                console.log("[feedback-modal] Button clicked at", new Date().toISOString());
-                console.log("[feedback-modal] Message:", message.substring(0, 50));
-                try {
-                  const formData = new FormData();
-                  formData.append("message", message);
-                  if (email.trim()) formData.append("email", email);
-
-                  console.log("[feedback-modal] Preparing fetch request...");
-                  const fetchUrl = "/app/feedback";
-                  console.log("[feedback-modal] Fetch URL:", fetchUrl);
-
-                  const response = await fetch(fetchUrl, {
-                    method: "POST",
-                    body: formData,
-                    credentials: "include",
-                  });
-
-                  console.log("[feedback-modal] Response received, status:", response.status);
-                  const responseText = await response.text();
-                  console.log("[feedback-modal] Response body:", responseText.substring(0, 200));
-
-                  if (response.ok || response.status === 302) {
-                    console.log("[feedback-modal] ✅ Success! Response status", response.status);
-                    setMessage("");
-                    setEmail("");
-                    // Wait for potential redirect to happen
-                    setTimeout(() => window.location.reload(), 1000);
-                  } else {
-                    console.error("[feedback-modal] ❌ Unexpected status", response.status, responseText);
-                  }
-                } catch (err) {
-                  console.error("[feedback-modal] ❌ Fetch error:", err instanceof Error ? err.message : String(err));
-                  if (err instanceof Error) {
-                    console.error("[feedback-modal] Stack:", err.stack);
-                  }
+              onClick={(e) => {
+                if (!message.trim()) {
+                  e.preventDefault();
+                  return;
                 }
+                console.log("[feedback-modal] Submit button clicked, form will submit normally");
               }}
               style={{
                 padding: "10px 24px",
@@ -778,7 +745,7 @@ function FeedbackModal({ onClose, feedbackSuccess }: { onClose: () => void; feed
               Send Feedback
             </button>
           </div>
-        </Form>
+        </form>
       </div>
     </>
   );
