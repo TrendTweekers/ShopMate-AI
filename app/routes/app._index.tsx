@@ -601,8 +601,8 @@ function FeedbackModal({ onClose, feedbackSuccess }: { onClose: () => void; feed
           </button>
         </div>
 
-        {/* Form - native HTML form posting to /app action for proper auth context */}
-        <form method="POST" action="/app" style={{ display: "flex", flexDirection: "column", gap: 20 }} ref={formRef}>
+        {/* Form - native HTML form posting to same route (/app._index action) */}
+        <form method="POST" style={{ display: "flex", flexDirection: "column", gap: 20 }} ref={formRef}>
           {/* Hidden field to identify this as a feedback submission */}
           <input type="hidden" name="intent" value="feedback_submission" />
           {/* Message */}
