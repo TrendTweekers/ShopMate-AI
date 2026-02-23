@@ -535,7 +535,8 @@ function FeedbackModal({ onClose, feedbackSuccess }: { onClose: () => void; feed
         style={{
           position: "fixed", inset: 0,
           background: "rgba(0,0,0,0.45)",
-          zIndex: 9998,
+          zIndex: 999998,
+          pointerEvents: "auto",
         }}
       />
 
@@ -553,11 +554,12 @@ function FeedbackModal({ onClose, feedbackSuccess }: { onClose: () => void; feed
           background: "#fff",
           borderRadius: 12,
           boxShadow: "0 8px 40px rgba(0,0,0,0.22)",
-          zIndex: 9999,
+          zIndex: 999999,
           padding: "28px 28px 24px",
           display: "flex",
           flexDirection: "column",
           gap: 20,
+          pointerEvents: "auto",
         }}
       >
         {/* Header */}
