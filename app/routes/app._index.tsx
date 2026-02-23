@@ -1,5 +1,5 @@
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useLoaderData, useNavigate, useRouteError } from "react-router";
+import { useLoaderData, useNavigate, useRouteError, redirect } from "react-router";
 import { useState, useEffect, useRef } from "react";
 import { MessageSquare, ShieldCheck, Clock, TrendingUp, Zap, DollarSign, MessageCircle } from "lucide-react";
 import KpiCard from "~/components/admin/KpiCard";
@@ -601,8 +601,8 @@ function FeedbackModal({ onClose, feedbackSuccess }: { onClose: () => void; feed
           </button>
         </div>
 
-        {/* Form - native HTML form posting to same route (/app._index action) */}
-        <form method="POST" style={{ display: "flex", flexDirection: "column", gap: 20 }} ref={formRef}>
+        {/* Form - native HTML form posting to current route (.) will resolve to this index route's action */}
+        <form method="POST" action="." style={{ display: "flex", flexDirection: "column", gap: 20 }} ref={formRef}>
           {/* Hidden field to identify this as a feedback submission */}
           <input type="hidden" name="intent" value="feedback_submission" />
           {/* Message */}
