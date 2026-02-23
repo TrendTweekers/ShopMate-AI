@@ -110,43 +110,52 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   // ─── Handle Feedback submission ──
-  const message = (formData.get("message") as string | null)?.trim() ?? "";
-  const email = (formData.get("email") as string | null)?.trim() || null;
+  if (intent === "feedback_submission") {
+    console.log(`[app._index action] Feedback submission from ${shop}`);
+    const message = (formData.get("message") as string | null)?.trim() ?? "";
+    const email = (formData.get("email") as string | null)?.trim() || null;
 
-  console.log(`[app._index action] Feedback submission from ${shop}: message length=${message.length}, email=${email ? "provided" : "empty"}`);
+    console.log(`[app._index action] Feedback: message length=${message.length}, email=${email ? "provided" : "empty"}`);
 
-  // Validate
-  if (!message) {
-    console.log("[app._index action] Validation failed: no message");
-    return Response.json({ ok: false, error: "Message is required." }, { status: 400 });
+    // Validate
+    if (!message) {
+      console.log("[app._index action] Validation failed: no message");
+      return redirect("/app?feedback=error");
+    }
+    if (message.length > 5000) {
+      console.log("[app._index action] Validation failed: message too long");
+      return redirect("/app?feedback=error");
+    }
+
+    try {
+      // Fetch current plan from DB
+      const settings = await prisma.shopSettings.findUnique({
+        where: { shop },
+        select: { plan: true },
+      });
+      const plan = settings?.plan ?? "free";
+
+      // Save feedback to DB with explicit replied field
+      const savedFeedback = await prisma.feedback.create({
+        data: {
+          shop,
+          message,
+          email: email || null,
+          plan,
+          replied: false,
+        },
+      });
+
+      console.log(`[app._index action] ✅ Feedback saved with ID: ${savedFeedback.id}`);
+      return redirect("/app?feedback=success");
+    } catch (err) {
+      console.error("[app._index action] ❌ Feedback error:", err instanceof Error ? err.message : String(err));
+      return redirect("/app?feedback=error");
+    }
   }
-  if (message.length > 5000) {
-    console.log("[app._index action] Validation failed: message too long");
-    return Response.json({ ok: false, error: "Message is too long (max 5,000 characters)." }, { status: 400 });
-  }
 
-  try {
-    // Fetch current plan from DB
-    const settings = await prisma.shopSettings.findUnique({
-      where: { shop },
-      select: { plan: true },
-    });
-    const plan = settings?.plan ?? "free";
-
-    // Save feedback to DB
-    const savedFeedback = await prisma.feedback.create({
-      data: { shop, message, email, plan },
-    });
-
-    console.log(`[app._index action] ✅ Feedback saved with ID: ${savedFeedback.id}`);
-    return Response.json({ ok: true });
-  } catch (err) {
-    console.error("[app._index action] ❌ Error:", err instanceof Error ? err.message : String(err));
-    return Response.json(
-      { ok: false, error: "Failed to save feedback. Please try again." },
-      { status: 500 }
-    );
-  }
+  // Unknown intent
+  return Response.json({ ok: false, error: "Unknown intent" }, { status: 400 });
 };
 
 // ─── Loader ───────────────────────────────────────────────────────────────────
@@ -592,8 +601,10 @@ function FeedbackModal({ onClose, feedbackSuccess }: { onClose: () => void; feed
           </button>
         </div>
 
-        {/* Form - native HTML form for maximum compatibility in embedded iframe */}
-        <form method="POST" action="/app/feedback" style={{ display: "flex", flexDirection: "column", gap: 20 }} ref={formRef}>
+        {/* Form - native HTML form posting to /app action for proper auth context */}
+        <form method="POST" action="/app" style={{ display: "flex", flexDirection: "column", gap: 20 }} ref={formRef}>
+          {/* Hidden field to identify this as a feedback submission */}
+          <input type="hidden" name="intent" value="feedback_submission" />
           {/* Message */}
           <div>
             <label

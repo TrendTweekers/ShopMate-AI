@@ -23,11 +23,30 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return new Response("Method not allowed", { status: 405 });
     }
 
-    const { session } = await authenticate.admin(request);
-    const shop = session.shop;
+    console.log("[feedback] Attempting to authenticate admin request");
+    let shop: string | null = null;
+
+    try {
+      const { session } = await authenticate.admin(request);
+      shop = session.shop;
+      console.log(`[feedback] ✅ Authentication successful, shop: ${shop}`);
+    } catch (authErr) {
+      console.error("[feedback] ⚠️ Authentication threw error:", authErr instanceof Error ? authErr.message : String(authErr));
+      // Authentication failed - try to extract shop from URL params as fallback
+      const url = new URL(request.url);
+      const shopParam = url.searchParams.get("shop");
+      console.log(`[feedback] Fallback shop from URL param: ${shopParam}`);
+
+      if (!shopParam) {
+        console.error("[feedback] ❌ No shop available from auth or URL params, redirecting to login");
+        // Let the auth error propagate to trigger login
+        throw authErr;
+      }
+      shop = shopParam;
+    }
 
     if (!shop) {
-      console.error("[feedback] No shop in session");
+      console.error("[feedback] No shop in session or URL");
       return redirect("/app?feedback=error");
     }
 
