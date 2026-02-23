@@ -713,27 +713,41 @@ function FeedbackModal({ onClose, feedbackSuccess }: { onClose: () => void; feed
                 e.preventDefault();
                 e.stopPropagation();
                 if (!message.trim()) return;
-                console.log("[feedback-modal] Button clicked, submitting via fetch");
+                console.log("[feedback-modal] Button clicked at", new Date().toISOString());
+                console.log("[feedback-modal] Message:", message.substring(0, 50));
                 try {
                   const formData = new FormData();
                   formData.append("message", message);
                   if (email.trim()) formData.append("email", email);
 
-                  console.log("[feedback-modal] Sending fetch POST to /app/feedback");
-                  const response = await fetch("/app/feedback", {
+                  console.log("[feedback-modal] Preparing fetch request...");
+                  const fetchUrl = "/app/feedback";
+                  console.log("[feedback-modal] Fetch URL:", fetchUrl);
+
+                  const response = await fetch(fetchUrl, {
                     method: "POST",
                     body: formData,
+                    credentials: "include",
                   });
-                  console.log("[feedback-modal] Fetch response status:", response.status);
-                  if (response.ok) {
-                    console.log("[feedback-modal] ✅ Feedback submitted successfully");
+
+                  console.log("[feedback-modal] Response received, status:", response.status);
+                  const responseText = await response.text();
+                  console.log("[feedback-modal] Response body:", responseText.substring(0, 200));
+
+                  if (response.ok || response.status === 302) {
+                    console.log("[feedback-modal] ✅ Success! Response status", response.status);
                     setMessage("");
                     setEmail("");
+                    // Wait for potential redirect to happen
+                    setTimeout(() => window.location.reload(), 1000);
                   } else {
-                    console.error("[feedback-modal] ❌ Fetch failed with status", response.status);
+                    console.error("[feedback-modal] ❌ Unexpected status", response.status, responseText);
                   }
                 } catch (err) {
                   console.error("[feedback-modal] ❌ Fetch error:", err instanceof Error ? err.message : String(err));
+                  if (err instanceof Error) {
+                    console.error("[feedback-modal] Stack:", err.stack);
+                  }
                 }
               }}
               style={{
