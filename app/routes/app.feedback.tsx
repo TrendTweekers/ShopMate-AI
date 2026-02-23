@@ -18,27 +18,34 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   try {
+    if (request.method !== "POST") {
+      console.error("[feedback] Non-POST request method:", request.method);
+      return new Response("Method not allowed", { status: 405 });
+    }
+
     const { session } = await authenticate.admin(request);
     const shop = session.shop;
-    console.log(`[feedback] Starting feedback submission from shop: ${shop}`);
 
-    if (request.method !== "POST") {
-      return Response.json({ ok: false, error: "Method not allowed" }, { status: 405 });
+    if (!shop) {
+      console.error("[feedback] No shop in session");
+      return redirect("/app?feedback=error");
     }
+
+    console.log(`[feedback] POST received from shop: ${shop}`);
 
     const formData = await request.formData();
     const message = (formData.get("message") as string | null)?.trim() ?? "";
     const email = (formData.get("email") as string | null)?.trim() || null;
 
-    console.log(`[feedback] Message length: ${message.length}, Email: ${email ? "provided" : "empty"}`);
+    console.log(`[feedback] Parsed form: message length=${message.length}, email=${email ? "yes" : "no"}`);
 
-    // Validate
+    // Validate message
     if (!message) {
-      console.log("[feedback] Validation failed: no message");
+      console.warn(`[feedback] Validation FAILED: empty message`);
       return redirect("/app?feedback=error");
     }
     if (message.length > 5000) {
-      console.log("[feedback] Validation failed: message too long");
+      console.warn(`[feedback] Validation FAILED: message too long (${message.length} chars)`);
       return redirect("/app?feedback=error");
     }
 
@@ -48,22 +55,32 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       select: { plan: true },
     });
     const plan = settings?.plan ?? "free";
-    console.log(`[feedback] Plan: ${plan}`);
+    console.log(`[feedback] Shop plan: ${plan}`);
 
-    // Save feedback to DB
+    // BULLETPROOF: Save feedback to DB with explicit replied field
+    // If this throws, it will be visible in Railway logs
     const savedFeedback = await prisma.feedback.create({
-      data: { shop, message, email, plan },
+      data: {
+        shop,
+        message,
+        email: email || null,
+        plan,
+        replied: false, // EXPLICITLY set default
+      },
     });
 
-    console.log(`[feedback] ✅ Feedback saved successfully with ID: ${savedFeedback.id}`);
+    console.log(`[feedback] ✅ SUCCESS: Feedback saved with ID=${savedFeedback.id}`);
 
     // Redirect back to dashboard with success parameter
     return redirect("/app?feedback=success");
   } catch (err) {
-    console.error("[feedback] ❌ Error:", err instanceof Error ? err.message : String(err));
+    console.error(`[feedback] ❌ FAILURE in action:`, err);
+    console.error(`[feedback] Error type: ${err instanceof Error ? err.constructor.name : typeof err}`);
     if (err instanceof Error) {
-      console.error("[feedback] Stack:", err.stack);
+      console.error(`[feedback] Error message: ${err.message}`);
+      console.error(`[feedback] Stack trace:\n${err.stack}`);
     }
+    // DO NOT swallow — let Railway logs capture it
     return redirect("/app?feedback=error");
   }
 };
