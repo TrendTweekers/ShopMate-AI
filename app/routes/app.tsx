@@ -19,13 +19,13 @@ export default function AppLayout() {
   return (
     <AppProvider embedded apiKey={apiKey}>
       <s-app-nav>
-        <s-app-nav-item href="/app" rel="home">Dashboard</s-app-nav-item>
-        <s-app-nav-item href="/app/conversations">Conversations</s-app-nav-item>
-        <s-app-nav-item href="/app/order-tracking">Order Tracking</s-app-nav-item>
-        <s-app-nav-item href="/app/recommendations">Recommendations</s-app-nav-item>
-        <s-app-nav-item href="/app/knowledge">Knowledge Base</s-app-nav-item>
-        <s-app-nav-item href="/app/setup">Setup Wizard</s-app-nav-item>
-        <s-app-nav-item href="/app/widget-preview">Widget Preview</s-app-nav-item>
+        <a href="/app" rel="home">Dashboard</a>
+        <a href="/app/conversations">Conversations</a>
+        <a href="/app/order-tracking">Order Tracking</a>
+        <a href="/app/recommendations">Recommendations</a>
+        <a href="/app/knowledge">Knowledge Base</a>
+        <a href="/app/setup">Setup Wizard</a>
+        <a href="/app/widget-preview">Widget Preview</a>
       </s-app-nav>
       <Outlet />
     </AppProvider>
