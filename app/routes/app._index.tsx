@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useLoaderData, useNavigate, useRouteError, redirect } from "react-router";
 import { useState, useEffect, useRef } from "react";
+import AdminLayout from "~/components/admin/AdminLayout";
 import { MessageSquare, ShieldCheck, Clock, TrendingUp, Zap, DollarSign, MessageCircle } from "lucide-react";
 import KpiCard from "~/components/admin/KpiCard";
 import {
@@ -810,7 +811,8 @@ export default function Dashboard() {
   const usageColor = usagePct >= 90 ? "#b91c1c" : usagePct >= 70 ? "#d97706" : "#008060";
 
   return (
-    <div className="space-y-6 max-w-6xl">
+    <AdminLayout>
+      <div className="space-y-6 max-w-6xl">
 
       {/* ── Review banner — only visible when a trigger fires ── */}
       {reviewTrigger && (
@@ -1151,6 +1153,7 @@ export default function Dashboard() {
 
       </div>{/* end leaderboard + conversations grid */}
     </div>
+    </AdminLayout>
   );
 }
 

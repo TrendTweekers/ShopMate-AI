@@ -12,6 +12,7 @@
 import { useState } from "react";
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useFetcher, useLoaderData, useRouteError } from "react-router";
+import AdminLayout from "~/components/admin/AdminLayout";
 import { BookOpen, Plus, Pencil, Trash2, RefreshCw, CheckCircle, AlertCircle } from "lucide-react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -219,7 +220,8 @@ export default function KnowledgePage() {
     s === "shopify_import" ? "Shopify" : "Manual";
 
   return (
-    <div className="max-w-4xl space-y-6">
+    <AdminLayout>
+      <div className="max-w-4xl space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
@@ -490,6 +492,7 @@ export default function KnowledgePage() {
         </div>
       )}
     </div>
+    </AdminLayout>
   );
 }
 

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useLocation, Outlet } from "react-router";
+import { Link, useLocation } from "react-router";
 import {
   LayoutDashboard,
   Wand2,
@@ -15,17 +15,17 @@ import {
 } from "lucide-react";
 
 const navItems = [
-  { label: "Dashboard", path: "/", icon: LayoutDashboard },
-  { label: "Setup Wizard", path: "/setup", icon: Wand2 },
-  { label: "Order Tracking", path: "/order-tracking", icon: Package },
-  { label: "Recommendations", path: "/recommendations", icon: Sparkles },
-  { label: "Knowledge Base", path: "/knowledge", icon: BookOpen },
-  { label: "Escalation", path: "/escalation", icon: LifeBuoy },
-  { label: "Conversations", path: "/conversations", icon: MessageSquare },
-  { label: "Widget Preview", path: "/widget-preview", icon: Eye },
+  { label: "Dashboard", path: "/app", icon: LayoutDashboard },
+  { label: "Setup Wizard", path: "/app/setup", icon: Wand2 },
+  { label: "Order Tracking", path: "/app/order-tracking", icon: Package },
+  { label: "Recommendations", path: "/app/recommendations", icon: Sparkles },
+  { label: "Knowledge Base", path: "/app/knowledge", icon: BookOpen },
+  { label: "Escalation", path: "/app/escalation", icon: LifeBuoy },
+  { label: "Conversations", path: "/app/conversations", icon: MessageSquare },
+  { label: "Widget Preview", path: "/app/widget-preview", icon: Eye },
 ];
 
-export default function AdminLayout() {
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -84,7 +84,7 @@ export default function AdminLayout() {
         </header>
 
         <main className="flex-1 p-6 overflow-auto">
-          <Outlet />
+          {children}
         </main>
       </div>
     </div>

@@ -3,6 +3,7 @@ import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { Switch } from "~/components/ui/switch";
 import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
+import AdminLayout from "~/components/admin/AdminLayout";
 import { Sparkles, TrendingUp, Shuffle, Clock } from "lucide-react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -32,7 +33,8 @@ export default function RecommendationsPage() {
   const [activeStrategy, setActiveStrategy] = useState("personalized");
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <AdminLayout>
+      <div className="max-w-2xl space-y-6">
       <div>
         <h2 className="text-xl font-semibold text-foreground">Recommendations</h2>
         <p className="text-sm text-muted-foreground mt-1">Configure product recommendation engine</p>
@@ -98,6 +100,7 @@ export default function RecommendationsPage() {
         <Button className="bg-primary text-primary-foreground hover:bg-primary/90">Save Changes</Button>
       </div>
     </div>
+    </AdminLayout>
   );
 }
 
