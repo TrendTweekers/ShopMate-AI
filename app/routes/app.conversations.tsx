@@ -3,6 +3,7 @@ import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useLoaderData } from "react-router";
 import { Search, Filter, MessageSquare, ArrowLeft } from "lucide-react";
 import { Input } from "~/components/ui/input";
+import AdminLayout from "~/components/admin/AdminLayout";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "~/db.server";
@@ -53,7 +54,8 @@ export default function ConversationsPage() {
       : "No messages yet";
 
   return (
-    <div className="space-y-4 max-w-5xl">
+    <AdminLayout>
+      <div className="space-y-4 max-w-5xl">
       <div>
         <h2 className="text-xl font-semibold text-foreground">Conversations</h2>
         <p className="text-sm text-muted-foreground mt-1">
@@ -186,6 +188,7 @@ export default function ConversationsPage() {
         </div>
       </div>
     </div>
+    </AdminLayout>
   );
 }
 

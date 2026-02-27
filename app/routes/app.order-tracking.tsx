@@ -3,6 +3,7 @@ import { Switch } from "~/components/ui/switch";
 import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
 import { authenticate } from "../shopify.server";
+import AdminLayout from "~/components/admin/AdminLayout";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "~/db.server";
 
@@ -21,7 +22,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 export default function OrderTracking() {
   return (
-    <div className="max-w-2xl space-y-6">
+    <AdminLayout>
+      <div className="max-w-2xl space-y-6">
       <div>
         <h2 className="text-xl font-semibold text-foreground">Order Tracking</h2>
         <p className="text-sm text-muted-foreground mt-1">Configure how customers look up their orders</p>
@@ -81,6 +83,7 @@ export default function OrderTracking() {
         <Button className="bg-primary text-primary-foreground hover:bg-primary/90">Save Changes</Button>
       </div>
     </div>
+    </AdminLayout>
   );
 }
 

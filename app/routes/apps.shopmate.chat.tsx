@@ -16,6 +16,7 @@ import { authenticate, unauthenticated } from "~/shopify.server";
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import Anthropic from "@anthropic-ai/sdk";
 import prisma from "~/db.server";
+import { fetchProductsForShop } from "~/lib/products.server";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -49,16 +50,25 @@ function isProductRecommendationIntent(text: string): boolean {
 }
 
 function extractProductQuery(text: string): string {
-  const stripped = text
+  // First, remove common product-intent phrases
+  let query = text
     .toLowerCase()
     .replace(
-      /recommend|suggest|show me|looking for|find me|what.*products?|best seller[s]?|popular|what do you (sell|have|carry|offer)|do you (have|sell|carry|offer)|your products|browse|catalog|collection/g,
+      /\b(recommend|suggest|show me|looking for|find me|what.*products?|best seller[s]?|popular|what do you (sell|have|carry|offer)|do you (have|sell|carry|offer)|your products|browse|catalog|collection)\b/g,
       "",
     )
-    .replace(/\?|please|can you|could you|i.*want|i.*need/g, "")
+    .replace(/[?!]|please|can you|could you|i.*want|i.*need/g, "")
     .trim();
-  // If we stripped everything meaningful, fetch all active products as a general catalog response
-  return stripped || "status:active";
+
+  // Extract just product terms (remove articles, prepositions, etc.)
+  query = query
+    .split(/\s+/)
+    .filter((word) => word.length > 2 && !/^(a|an|the|for|and|or|in|on|at)$/.test(word))
+    .join(" ")
+    .trim();
+
+  // If no specific product mentioned, return empty string to fetch all products
+  return query || "";
 }
 
 // ─── Escalation detection (used only for counter logic) ───────────────────────
@@ -209,85 +219,8 @@ async function fetchOrderContext(admin: AdminApiContext, rawNumber: string): Pro
   return `ORDER_NOT_FOUND:${withHash}`;
 }
 
-// ─── fetchProducts ────────────────────────────────────────────────────────────
-// Returns products + a diagnostic error string if the call fails.
-
-async function fetchProducts(
-  admin: AdminApiContext,
-  query: string,
-  shop: string,
-): Promise<{ context: string; products: ProductResult[]; error?: string }> {
-  console.log(`[products] Fetching products for shop "${shop}" with query: "${query}"`);
-  try {
-    const res = await admin.graphql(PRODUCTS_QUERY, { variables: { query } });
-    const json = (await res.json()) as {
-      errors?: Array<{ message: string }>;
-      data?: {
-        products?: {
-          nodes?: Array<{
-            id?: string;
-            title?: string;
-            handle?: string;
-            featuredImage?: { url?: string } | null;
-            priceRangeV2?: { minVariantPrice?: { amount?: string; currencyCode?: string } };
-          }>;
-        };
-      };
-    };
-
-    // GraphQL-level errors (e.g. missing read_products scope)
-    if (json.errors?.length) {
-      const errMsg = json.errors.map((e) => e.message).join("; ");
-      console.error("[products] GraphQL errors:", errMsg);
-      const isScopeError = /access denied|read_products|unauthorized|forbidden/i.test(errMsg);
-      const reason = isScopeError
-        ? "missing scope read_products — app needs reinstall"
-        : errMsg;
-      return {
-        context: `PRODUCT_ACCESS_ERROR: ${reason}`,
-        products: [],
-        error: reason,
-      };
-    }
-
-    const nodes = json?.data?.products?.nodes ?? [];
-    console.log(`[products] Returned ${nodes.length} product(s) for query "${query}"`);
-
-    if (!nodes.length) {
-      return {
-        context: `PRODUCT_EMPTY: 0 products returned for query "${query}". Store may have no active products or the query returned no matches.`,
-        products: [],
-        error: `0 products returned for query "${query}"`,
-      };
-    }
-
-    const products: ProductResult[] = nodes.map((p) => {
-      const price = p.priceRangeV2?.minVariantPrice;
-      const amount = price?.amount ? parseFloat(price.amount).toFixed(2) : "0.00";
-      return {
-        id: p.id ?? "",
-        handle: p.handle ?? "",
-        title: p.title ?? "Product",
-        price: `${price?.currencyCode ?? "USD"} ${amount}`,
-        image: p.featuredImage?.url ?? null,
-        url: `https://${shop}/products/${p.handle ?? ""}`,
-      };
-    });
-
-    return {
-      context: `RECOMMENDED PRODUCTS:\n${products.map((p) => `- ${p.title} at ${p.price}`).join("\n")}`,
-      products,
-    };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error("[products] Exception fetching products:", msg);
-    return {
-      context: `PRODUCT_EXCEPTION: ${msg}`,
-      products: [],
-      error: msg,
-    };
-  }
-}
+// ─── Product fetching is now in ~/lib/products.server.ts ──────────────────────
+// Import: fetchProductsForShop
 
 // ─── CORS headers ─────────────────────────────────────────────────────────────
 
@@ -480,10 +413,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   } else if (isProductRecommendationIntent(message)) {
     const productQuery = extractProductQuery(message);
     console.log("[appProxy] Product recommendation intent — query:", productQuery);
-    const result = await fetchProducts(adminCtx, productQuery, shop);
+    const result = await fetchProductsForShop(shop, productQuery);
     extraContext = result.context;
-    products = result.products;
+    products = result.products as ProductResult[];
     featureError = result.error;
+
+    console.log(`[appProxy] Product fetch returned ${products.length} product(s)`);
 
     if (result.error) {
       console.error("[appProxy] Product fetch error:", result.error);
@@ -523,33 +458,59 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   } else if (extraContext.startsWith("NO_ADMIN_CTX_ORDER:")) {
     extraContextForAI = "Order tracking is temporarily unavailable due to a configuration issue. Apologise and ask the customer to contact the store directly or check their confirmation email for a tracking link.";
   } else if (extraContext.startsWith("NO_ADMIN_CTX_PRODUCT:")) {
-    extraContextForAI = `The live product catalog is temporarily unavailable. Apologise briefly and direct the customer to browse products directly at https://${shop}/collections/all where they can see everything available.`;
+    extraContextForAI = `No products are currently available due to a configuration issue. Apologise briefly and direct the customer to browse products directly at https://${shop}/collections/all where they can see everything available.`;
   } else if (extraContext.startsWith("PRODUCT_ACCESS_ERROR:")) {
-    extraContextForAI = `Product catalog access failed (likely a permissions issue). Apologise briefly and direct the customer to browse products directly at https://${shop}/collections/all.`;
+    extraContextForAI = `No products are currently available due to a permissions issue. Apologise briefly and direct the customer to browse products directly at https://${shop}/collections/all.`;
   } else if (extraContext.startsWith("PRODUCT_EMPTY:")) {
-    extraContextForAI = `No products matched the customer's query in the catalog. Suggest they browse all products at https://${shop}/collections/all or try a different search term.`;
+    extraContextForAI = `No products matched the customer's query. Suggest they browse all products at https://${shop}/collections/all or try a different search term.`;
   } else if (extraContext.startsWith("PRODUCT_EXCEPTION:")) {
-    extraContextForAI = `Product information is temporarily unavailable due to a technical issue. Apologise briefly and direct the customer to https://${shop}/collections/all to browse directly.`;
+    extraContextForAI = `No products are currently available due to a technical issue. Apologise briefly and direct the customer to https://${shop}/collections/all to browse directly.`;
+  } else if (extraContext.startsWith("RECOMMENDED PRODUCTS:")) {
+    // Products successfully fetched — tell AI to use them
+    extraContextForAI = `You have access to the following products from this store:\n${extraContext.replace("RECOMMENDED PRODUCTS:", "").trim()}\n\nUse these products to answer the customer's questions directly.`;
   } else {
-    // Passes through ORDER FOUND context, RECOMMENDED PRODUCTS context, etc.
+    // Passes through ORDER FOUND context, etc.
     extraContextForAI = extraContext;
   }
 
   const systemPrompt = [
     `You are ShopMate, a helpful AI assistant for the Shopify store ${shop}. Help customers with order tracking, product recommendations, returns, and general questions. Be friendly, concise, and helpful.`,
     kbContext,
-    extraContextForAI ? `\nLIVE ORDER/PRODUCT CONTEXT:\n${extraContextForAI}` : "",
-    products.length > 0 ? "\nPresent product cards after your reply. Briefly introduce them." : "",
+    `\n── PRODUCT INFORMATION ──\nWhen product information is provided below, use it directly to answer customer questions about products. Do NOT tell customers you don't have access to the catalog — you have what's listed below.`,
+    extraContextForAI ? `\nLIVE ORDER/PRODUCT CONTEXT:\n${extraContextForAI}` : "\nNo product information is currently available.",
+    products.length > 0 ? "\n\nPresent product cards after your reply. Briefly introduce them." : "",
   ]
     .filter(Boolean)
     .join("\n");
+
+  console.log('[appProxy] extraContext:', extraContext?.slice(0, 300));
+  console.log('[appProxy] extraContextForAI:', extraContextForAI?.slice(0, 300));
+  console.log('[appProxy] products.length:', products.length);
+
+  // ── Filter conversation history to remove old "no access" messages ────────
+  // Previous assistant messages claiming no catalog access contradict new context
+  const cleanedHistory = history.filter((msg) => {
+    if (msg.role === "assistant") {
+      const text = typeof msg.content === "string" ? msg.content : "";
+      const hasNegativeAccess =
+        text.includes("don't have access") ||
+        text.includes("cannot access") ||
+        text.includes("unable to access") ||
+        text.includes("no access to");
+      if (hasNegativeAccess) {
+        console.log("[appProxy] Filtering out old 'no access' message from history");
+        return false;
+      }
+    }
+    return true;
+  });
 
   // ── Call Anthropic ────────────────────────────────────────────────────────
   const aiRes = await anthropic.messages.create({
     model: "claude-haiku-4-5",
     max_tokens: 1024,
     system: systemPrompt,
-    messages: [...history, { role: "user", content: message }],
+    messages: [...cleanedHistory, { role: "user", content: message }],
   });
 
   const reply =

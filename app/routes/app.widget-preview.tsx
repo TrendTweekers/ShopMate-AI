@@ -2,6 +2,7 @@ import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useLoaderData } from "react-router";
 import ChatWidget from "~/components/storefront/ChatWidget";
 import { authenticate } from "../shopify.server";
+import AdminLayout from "~/components/admin/AdminLayout";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "~/db.server";
 
@@ -22,7 +23,8 @@ export default function WidgetPreview() {
   const { shop } = useLoaderData<typeof loader>();
 
   return (
-    <div className="max-w-5xl space-y-6">
+    <AdminLayout>
+      <div className="max-w-5xl space-y-6">
       <div>
         <h2 className="text-xl font-semibold text-foreground">Widget Preview</h2>
         <p className="text-sm text-muted-foreground mt-1">
@@ -65,6 +67,7 @@ export default function WidgetPreview() {
         </div>
       </div>
     </div>
+    </AdminLayout>
   );
 }
 

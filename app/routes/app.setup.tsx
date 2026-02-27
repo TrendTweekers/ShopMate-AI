@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useFetcher, useLoaderData, useNavigate } from "react-router";
+import AdminLayout from "~/components/admin/AdminLayout";
 import { Check, ArrowRight, ArrowLeft, Bot, Package, Sparkles, BookOpen, Zap } from "lucide-react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { Button } from "~/components/ui/button";
@@ -79,7 +80,8 @@ export default function SetupWizard() {
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <AdminLayout>
+      <div className="max-w-3xl mx-auto space-y-6">
       {/* Logo */}
       <div style={{ display: "flex", justifyContent: "center", paddingBottom: 4 }}>
         <img
@@ -296,6 +298,7 @@ export default function SetupWizard() {
         </div>
       )}
     </div>
+    </AdminLayout>
   );
 }
 

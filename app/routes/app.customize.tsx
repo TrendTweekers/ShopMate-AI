@@ -12,6 +12,7 @@ import { useLoaderData } from "react-router";
 import { useState } from "react";
 import { Palette, Copy, Check, ExternalLink, MessageSquare } from "lucide-react";
 import { authenticate } from "../shopify.server";
+import AdminLayout from "~/components/admin/AdminLayout";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "~/db.server";
 
@@ -131,7 +132,8 @@ export default function CustomizePage() {
   const themeEditorUrl = `https://${shop}/admin/themes/current/editor?context=apps`;
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto" }} className="space-y-6">
+    <AdminLayout>
+      <div style={{ maxWidth: 900, margin: "0 auto" }} className="space-y-6">
 
       {/* ── Page header ──────────────────────────────────────────────────── */}
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -590,6 +592,7 @@ export default function CustomizePage() {
       </div>
 
     </div>
+    </AdminLayout>
   );
 }
 
