@@ -105,6 +105,8 @@ export async function fetchProductsForShop(
       };
     };
 
+    console.log('[products.server] Raw API response:', JSON.stringify(json).slice(0, 500));
+
     // Check for GraphQL-level errors
     if (json.errors?.length) {
       const errMsg = json.errors.map((e) => e.message).join("; ");
