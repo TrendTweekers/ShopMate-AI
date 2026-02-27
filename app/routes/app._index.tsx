@@ -1,5 +1,5 @@
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useLoaderData, useNavigate, useRouteError, redirect } from "react-router";
+import { useLoaderData, useNavigate, useRouteError, redirect, useFetcher } from "react-router";
 import { useState, useEffect, useRef } from "react";
 import AdminLayout from "~/components/admin/AdminLayout";
 import { MessageSquare, ShieldCheck, Clock, TrendingUp, Zap, DollarSign, MessageCircle } from "lucide-react";
@@ -325,6 +325,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   }
 
   return {
+    // Feedback modal needs shop domain for form submission
+    shop,
     totalChats,
     totalMessages,
     deflectionRate,
@@ -485,15 +487,16 @@ function FeedbackModal({ onClose, feedbackSuccess }: { onClose: () => void; feed
   const [message, setMessage] = useState("");
   const [email, setEmail]     = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const formRef = useRef<HTMLFormElement>(null);
+  const fetcher = useFetcher();
+  const loaderData = useLoaderData<typeof loader>();
 
   // Focus textarea when modal opens
   useEffect(() => { textareaRef.current?.focus(); }, []);
 
-  // Show success toast if redirected back with success parameter
+  // Show success toast when fetcher completes successfully
   useEffect(() => {
-    if (feedbackSuccess) {
-      console.log("[feedback-modal] Feedback success detected from redirect");
+    if (fetcher.state === "idle" && fetcher.data?.success) {
+      console.log("[feedback-modal] Feedback submitted successfully via fetcher");
       // Brief success state before closing
       setTimeout(() => {
         setMessage("");
@@ -501,7 +504,7 @@ function FeedbackModal({ onClose, feedbackSuccess }: { onClose: () => void; feed
         onClose();
       }, 1500);
     }
-  }, [feedbackSuccess, onClose]);
+  }, [fetcher.state, fetcher.data, onClose]);
 
   // Close on Escape key
   useEffect(() => {
@@ -602,8 +605,10 @@ function FeedbackModal({ onClose, feedbackSuccess }: { onClose: () => void; feed
           </button>
         </div>
 
-        {/* Form - POST to /app/feedback dedicated handler */}
-        <form method="POST" action="/app/feedback" style={{ display: "flex", flexDirection: "column", gap: 20 }} ref={formRef}>
+        {/* Form - use fetcher to maintain Shopify session context */}
+        <fetcher.Form method="post" action="/app/feedback" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          {/* Pass shop to the feedback action (fetcher-based form, not full page nav) */}
+          <input type="hidden" name="shop" value={loaderData.shop} />
           {/* Message */}
           <div>
             <label
@@ -755,7 +760,7 @@ function FeedbackModal({ onClose, feedbackSuccess }: { onClose: () => void; feed
               Send Feedback
             </button>
           </div>
-        </form>
+        </fetcher.Form>
       </div>
     </>
   );
