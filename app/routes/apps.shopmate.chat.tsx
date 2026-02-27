@@ -482,6 +482,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     .filter(Boolean)
     .join("\n");
 
+  console.log('[appProxy] extraContext:', extraContext?.slice(0, 300));
+  console.log('[appProxy] extraContextForAI:', extraContextForAI?.slice(0, 300));
+  console.log('[appProxy] products.length:', products.length);
+
   // ── Call Anthropic ────────────────────────────────────────────────────────
   const aiRes = await anthropic.messages.create({
     model: "claude-haiku-4-5",
