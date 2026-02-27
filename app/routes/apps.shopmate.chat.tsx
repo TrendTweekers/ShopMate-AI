@@ -50,16 +50,25 @@ function isProductRecommendationIntent(text: string): boolean {
 }
 
 function extractProductQuery(text: string): string {
-  const stripped = text
+  // First, remove common product-intent phrases
+  let query = text
     .toLowerCase()
     .replace(
-      /recommend|suggest|show me|looking for|find me|what.*products?|best seller[s]?|popular|what do you (sell|have|carry|offer)|do you (have|sell|carry|offer)|your products|browse|catalog|collection/g,
+      /\b(recommend|suggest|show me|looking for|find me|what.*products?|best seller[s]?|popular|what do you (sell|have|carry|offer)|do you (have|sell|carry|offer)|your products|browse|catalog|collection)\b/g,
       "",
     )
-    .replace(/\?|please|can you|could you|i.*want|i.*need/g, "")
+    .replace(/[?!]|please|can you|could you|i.*want|i.*need/g, "")
     .trim();
-  // If we stripped everything meaningful, fetch all active products as a general catalog response
-  return stripped || "status:active";
+
+  // Extract just product terms (remove articles, prepositions, etc.)
+  query = query
+    .split(/\s+/)
+    .filter((word) => word.length > 2 && !/^(a|an|the|for|and|or|in|on|at)$/.test(word))
+    .join(" ")
+    .trim();
+
+  // If no specific product mentioned, fetch all active products as a general catalog response
+  return query || "status:ACTIVE";
 }
 
 // ─── Escalation detection (used only for counter logic) ───────────────────────
