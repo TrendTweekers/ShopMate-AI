@@ -38,16 +38,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       console.log(`[feedback] Fallback shop from URL param: ${shopParam}`);
 
       if (!shopParam) {
-        console.error("[feedback] ❌ No shop available from auth or URL params, redirecting to login");
-        // Let the auth error propagate to trigger login
-        throw authErr;
+        console.error("[feedback] ❌ No shop available from auth or URL params");
+        // Return error response instead of throwing (useFetcher doesn't handle redirects)
+        return { success: false, error: "Authentication failed" };
       }
       shop = shopParam;
     }
 
     if (!shop) {
       console.error("[feedback] No shop in session or URL");
-      return redirect("/app?feedback=error");
+      return { success: false, error: "No shop found" };
     }
 
     console.log(`[feedback] POST received from shop: ${shop}`);
@@ -61,11 +61,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     // Validate message
     if (!message) {
       console.warn(`[feedback] Validation FAILED: empty message`);
-      return redirect("/app?feedback=error");
+      return { success: false, error: "Message is required" };
     }
     if (message.length > 5000) {
       console.warn(`[feedback] Validation FAILED: message too long (${message.length} chars)`);
-      return redirect("/app?feedback=error");
+      return { success: false, error: "Message is too long (max 5000 chars)" };
     }
 
     // Fetch current plan from DB
@@ -90,8 +90,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     console.log(`[feedback] ✅ SUCCESS: Feedback saved with ID=${savedFeedback.id}`);
 
-    // Redirect back to dashboard with success parameter
-    return redirect("/app?feedback=success");
+    // Return success response for useFetcher
+    return { success: true, feedbackId: savedFeedback.id };
   } catch (err) {
     console.error(`[feedback] ❌ FAILURE in action:`, err);
     console.error(`[feedback] Error type: ${err instanceof Error ? err.constructor.name : typeof err}`);
@@ -99,8 +99,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       console.error(`[feedback] Error message: ${err.message}`);
       console.error(`[feedback] Stack trace:\n${err.stack}`);
     }
-    // DO NOT swallow — let Railway logs capture it
-    return redirect("/app?feedback=error");
+    // Return error response for useFetcher
+    const errorMsg = err instanceof Error ? err.message : "Failed to save feedback";
+    return { success: false, error: errorMsg };
   }
 };
 
