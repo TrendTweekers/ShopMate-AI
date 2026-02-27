@@ -476,8 +476,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const systemPrompt = [
     `You are ShopMate, a helpful AI assistant for the Shopify store ${shop}. Help customers with order tracking, product recommendations, returns, and general questions. Be friendly, concise, and helpful.`,
     kbContext,
-    extraContextForAI ? `\nLIVE ORDER/PRODUCT CONTEXT:\n${extraContextForAI}` : "",
-    products.length > 0 ? "\nPresent product cards after your reply. Briefly introduce them." : "",
+    `\n── PRODUCT INFORMATION ──\nWhen product information is provided below, use it directly to answer customer questions about products. Do NOT tell customers you don't have access to the catalog — you have what's listed below.`,
+    extraContextForAI ? `\nLIVE ORDER/PRODUCT CONTEXT:\n${extraContextForAI}` : "\nNo product information is currently available.",
+    products.length > 0 ? "\n\nPresent product cards after your reply. Briefly introduce them." : "",
   ]
     .filter(Boolean)
     .join("\n");
