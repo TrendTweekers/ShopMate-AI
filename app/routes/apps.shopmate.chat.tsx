@@ -487,12 +487,30 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   console.log('[appProxy] extraContextForAI:', extraContextForAI?.slice(0, 300));
   console.log('[appProxy] products.length:', products.length);
 
+  // ── Filter conversation history to remove old "no access" messages ────────
+  // Previous assistant messages claiming no catalog access contradict new context
+  const cleanedHistory = history.filter((msg) => {
+    if (msg.role === "assistant") {
+      const text = typeof msg.content === "string" ? msg.content : "";
+      const hasNegativeAccess =
+        text.includes("don't have access") ||
+        text.includes("cannot access") ||
+        text.includes("unable to access") ||
+        text.includes("no access to");
+      if (hasNegativeAccess) {
+        console.log("[appProxy] Filtering out old 'no access' message from history");
+        return false;
+      }
+    }
+    return true;
+  });
+
   // ── Call Anthropic ────────────────────────────────────────────────────────
   const aiRes = await anthropic.messages.create({
     model: "claude-haiku-4-5",
     max_tokens: 1024,
     system: systemPrompt,
-    messages: [...history, { role: "user", content: message }],
+    messages: [...cleanedHistory, { role: "user", content: message }],
   });
 
   const reply =
