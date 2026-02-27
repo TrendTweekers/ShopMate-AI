@@ -67,8 +67,8 @@ function extractProductQuery(text: string): string {
     .join(" ")
     .trim();
 
-  // If no specific product mentioned, fetch all active products as a general catalog response
-  return query || "status:ACTIVE";
+  // If no specific product mentioned, return empty string to fetch all products
+  return query || "";
 }
 
 // ─── Escalation detection (used only for counter logic) ───────────────────────

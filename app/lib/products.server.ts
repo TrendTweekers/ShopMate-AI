@@ -52,6 +52,11 @@ export async function fetchProductsForShop(
     console.log("[products.server] Found offline session token for shop:", shopDomain);
 
     // Step 2: Use the access token to call Shopify Admin API directly
+    // Build the products query — only include query parameter if provided
+    const gqlQuery = query
+      ? `products(first: 5, query: ${JSON.stringify(query)})`
+      : `products(first: 5)`;
+
     const response = await fetch(
       `https://${shopDomain}/admin/api/2025-01/graphql.json`,
       {
@@ -62,7 +67,7 @@ export async function fetchProductsForShop(
         },
         body: JSON.stringify({
           query: `{
-            products(first: 5, query: "${query.replace(/"/g, '\\"')}") {
+            ${gqlQuery} {
               edges {
                 node {
                   id
