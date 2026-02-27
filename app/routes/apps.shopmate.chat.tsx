@@ -209,18 +209,66 @@ async function fetchOrderContext(admin: AdminApiContext, rawNumber: string): Pro
   return `ORDER_NOT_FOUND:${withHash}`;
 }
 
-// ─── fetchProducts ────────────────────────────────────────────────────────────
-// Returns products + a diagnostic error string if the call fails.
+// ─── fetchProductsDirectly ────────────────────────────────────────────────────
+// Fetches products using the stored offline access token directly via REST API.
+// This avoids reliance on the admin context and gives explicit control over auth.
 
-async function fetchProducts(
-  admin: AdminApiContext,
+async function fetchProductsDirectly(
+  shopDomain: string,
   query: string,
-  shop: string,
 ): Promise<{ context: string; products: ProductResult[]; error?: string }> {
-  console.log(`[products] Fetching products for shop "${shop}" with query: "${query}"`);
+  console.log(`[products] Fetching products for shop "${shopDomain}" with query: "${query}"`);
+
   try {
-    const res = await admin.graphql(PRODUCTS_QUERY, { variables: { query } });
-    const json = (await res.json()) as {
+    // Step 1: Look up the offline access token from the Session table
+    const session = await prisma.session.findFirst({
+      where: { shop: shopDomain, isOnline: false },
+    });
+
+    if (!session?.accessToken) {
+      console.warn("[products] No offline session token found for shop:", shopDomain);
+      return {
+        context: `PRODUCT_ACCESS_ERROR: No offline session token found — app needs reinstall`,
+        products: [],
+        error: "no_offline_token",
+      };
+    }
+
+    console.log("[products] Found offline session token for shop:", shopDomain);
+
+    // Step 2: Use the access token to call Shopify Admin API directly
+    const response = await fetch(
+      `https://${shopDomain}/admin/api/2025-01/graphql.json`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Shopify-Access-Token": session.accessToken,
+        },
+        body: JSON.stringify({
+          query: `{
+            products(first: 5, query: "${query.replace(/"/g, '\\"')}", sortKey: BEST_SELLING) {
+              nodes {
+                id
+                title
+                handle
+                featuredImage {
+                  url
+                }
+                priceRangeV2 {
+                  minVariantPrice {
+                    amount
+                    currencyCode
+                  }
+                }
+              }
+            }
+          }`,
+        }),
+      },
+    );
+
+    const json = (await response.json()) as {
       errors?: Array<{ message: string }>;
       data?: {
         products?: {
@@ -235,7 +283,7 @@ async function fetchProducts(
       };
     };
 
-    // GraphQL-level errors (e.g. missing read_products scope)
+    // Check for GraphQL-level errors
     if (json.errors?.length) {
       const errMsg = json.errors.map((e) => e.message).join("; ");
       console.error("[products] GraphQL errors:", errMsg);
@@ -270,7 +318,7 @@ async function fetchProducts(
         title: p.title ?? "Product",
         price: `${price?.currencyCode ?? "USD"} ${amount}`,
         image: p.featuredImage?.url ?? null,
-        url: `https://${shop}/products/${p.handle ?? ""}`,
+        url: `https://${shopDomain}/products/${p.handle ?? ""}`,
       };
     });
 
@@ -287,6 +335,19 @@ async function fetchProducts(
       error: msg,
     };
   }
+}
+
+// ─── fetchProducts (legacy, kept for compatibility) ───────────────────────────
+// Deprecated: use fetchProductsDirectly instead.
+
+async function fetchProducts(
+  admin: AdminApiContext,
+  query: string,
+  shop: string,
+): Promise<{ context: string; products: ProductResult[]; error?: string }> {
+  console.log(`[products] fetchProducts (legacy) called for shop "${shop}" with query: "${query}"`);
+  // Delegate to the new direct approach
+  return fetchProductsDirectly(shop, query);
 }
 
 // ─── CORS headers ─────────────────────────────────────────────────────────────
@@ -480,7 +541,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   } else if (isProductRecommendationIntent(message)) {
     const productQuery = extractProductQuery(message);
     console.log("[appProxy] Product recommendation intent — query:", productQuery);
-    const result = await fetchProducts(adminCtx, productQuery, shop);
+    const result = await fetchProductsDirectly(shop, productQuery);
     extraContext = result.context;
     products = result.products;
     featureError = result.error;
