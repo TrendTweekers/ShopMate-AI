@@ -186,12 +186,12 @@ export default function ChatWidget({ shop }: ChatWidgetProps) {
                     <ArrowLeft className="w-4 h-4" />
                   </button>
                 )}
-                <div className="w-7 h-7 rounded-full bg-primary-foreground/20 flex items-center justify-center">
-                  <MessageCircle className="w-3.5 h-3.5 text-primary-foreground" />
+                <div className="w-8 h-8 rounded-full bg-primary-foreground flex items-center justify-center flex-shrink-0">
+                  <span className="text-xs font-bold text-primary">SM</span>
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-primary-foreground">ShopMate</p>
-                  <p className="text-[10px] text-primary-foreground/70">Always here to help</p>
+                  <p className="text-sm font-bold text-primary-foreground">ShopMate AI</p>
+                  <p className="text-[10px] text-primary-foreground/80">Shop Assistant</p>
                 </div>
               </div>
               <button
