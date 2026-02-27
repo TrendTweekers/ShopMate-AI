@@ -62,18 +62,18 @@ export async function fetchProductsForShop(
         },
         body: JSON.stringify({
           query: `{
-            products(first: 5, query: "${query.replace(/"/g, '\\"')}", sortKey: BEST_SELLER) {
-              nodes {
-                id
-                title
-                handle
-                featuredImage {
-                  url
-                }
-                priceRangeV2 {
-                  minVariantPrice {
-                    amount
-                    currencyCode
+            products(first: 5, query: "${query.replace(/"/g, '\\"')}") {
+              edges {
+                node {
+                  id
+                  title
+                  handle
+                  onlineStoreUrl
+                  priceRangeV2 {
+                    minVariantPrice {
+                      amount
+                      currencyCode
+                    }
                   }
                 }
               }
@@ -87,12 +87,14 @@ export async function fetchProductsForShop(
       errors?: Array<{ message: string }>;
       data?: {
         products?: {
-          nodes?: Array<{
-            id?: string;
-            title?: string;
-            handle?: string;
-            featuredImage?: { url?: string } | null;
-            priceRangeV2?: { minVariantPrice?: { amount?: string; currencyCode?: string } };
+          edges?: Array<{
+            node?: {
+              id?: string;
+              title?: string;
+              handle?: string;
+              onlineStoreUrl?: string | null;
+              priceRangeV2?: { minVariantPrice?: { amount?: string; currencyCode?: string } };
+            };
           }>;
         };
       };
@@ -113,7 +115,8 @@ export async function fetchProductsForShop(
       };
     }
 
-    const nodes = json?.data?.products?.nodes ?? [];
+    const edges = json?.data?.products?.edges ?? [];
+    const nodes = edges.map((e) => e.node).filter((n): n is NonNullable<typeof n> => n != null);
     console.log(`[products.server] Returned ${nodes.length} product(s) for query "${query}"`);
 
     if (!nodes.length) {
@@ -127,13 +130,14 @@ export async function fetchProductsForShop(
     const products: ProductNode[] = nodes.map((p) => {
       const price = p.priceRangeV2?.minVariantPrice;
       const amount = price?.amount ? parseFloat(price.amount).toFixed(2) : "0.00";
+      const productUrl = p.onlineStoreUrl || `https://${shopDomain}/products/${p.handle ?? ""}`;
       return {
         id: p.id ?? "",
         handle: p.handle ?? "",
         title: p.title ?? "Product",
         price: `${price?.currencyCode ?? "USD"} ${amount}`,
-        image: p.featuredImage?.url ?? null,
-        url: `https://${shopDomain}/products/${p.handle ?? ""}`,
+        image: null,
+        url: productUrl,
       };
     });
 
