@@ -103,37 +103,55 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     throw new Response("Unauthorized", { status: 404 });
   }
 
-  const allSettings = await prisma.shopSettings.findMany({
-    select: {
-      id: true,
-      shop: true,
-      plan: true,
-      healthScore: true,
-      widgetEnabled: true,
-      lastActiveAt: true,
-      totalAiRevenue: true,
-      internalNotes: true,
-      trialEndsAt: true,
-      createdAt: true,
-    },
-  });
+  // Load shop settings with fallback
+  let allSettings: any[] = [];
+  try {
+    allSettings = await prisma.shopSettings.findMany({
+      select: {
+        id: true,
+        shop: true,
+        plan: true,
+        healthScore: true,
+        widgetEnabled: true,
+        lastActiveAt: true,
+        totalAiRevenue: true,
+        internalNotes: true,
+        trialEndsAt: true,
+        createdAt: true,
+      },
+    });
+  } catch (err) {
+    console.error("[internal-admin] Failed to load shop settings:", err);
+  }
 
-  const chatCounts = await prisma.conversation.groupBy({
-    by: ["shop"],
-    _count: { id: true },
-  });
+  // Load chat counts with fallback
+  let chatCounts: any[] = [];
+  try {
+    chatCounts = await prisma.conversation.groupBy({
+      by: ["shop"],
+      _count: { id: true },
+    });
+  } catch (err) {
+    console.error("[internal-admin] Failed to load chat counts:", err);
+  }
 
-  const feedbackEntries = await prisma.feedback.findMany({
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      shop: true,
-      message: true,
-      email: true,
-      createdAt: true,
-      replied: true,
-    },
-  });
+  // Load feedback entries with fallback
+  let feedbackEntries: any[] = [];
+  try {
+    feedbackEntries = await prisma.feedback.findMany({
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        shop: true,
+        message: true,
+        email: true,
+        createdAt: true,
+        replied: true,
+      },
+    });
+  } catch (err) {
+    console.error("[internal-admin] Failed to load feedback entries:", err);
+  }
 
   console.log(`[internal-admin] Loaded ${feedbackEntries.length} feedback entries`);
 
@@ -218,79 +236,103 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const shopId = formData.get("shopId") as string;
     const notes = formData.get("notes") as string;
 
-    await prisma.shopSettings.update({
-      where: { id: shopId },
-      data: { internalNotes: notes || null },
-    });
-
-    return { success: true, type: "update-notes" };
+    try {
+      await prisma.shopSettings.update({
+        where: { id: shopId },
+        data: { internalNotes: notes || null },
+      });
+      return { success: true, type: "update-notes" };
+    } catch (err) {
+      console.error("[internal-admin] Failed to update notes:", err);
+      return { success: false, type: "update-notes", error: String(err) };
+    }
   }
 
   if (action === "toggle-widget") {
     const shopId = formData.get("shopId") as string;
 
-    const current = await prisma.shopSettings.findUnique({
-      where: { id: shopId },
-      select: { widgetEnabled: true },
-    });
+    try {
+      const current = await prisma.shopSettings.findUnique({
+        where: { id: shopId },
+        select: { widgetEnabled: true },
+      });
 
-    await prisma.shopSettings.update({
-      where: { id: shopId },
-      data: { widgetEnabled: !current?.widgetEnabled },
-    });
+      await prisma.shopSettings.update({
+        where: { id: shopId },
+        data: { widgetEnabled: !current?.widgetEnabled },
+      });
 
-    return { success: true, type: "toggle-widget", widgetEnabled: !current?.widgetEnabled };
+      return { success: true, type: "toggle-widget", widgetEnabled: !current?.widgetEnabled };
+    } catch (err) {
+      console.error("[internal-admin] Failed to toggle widget:", err);
+      return { success: false, type: "toggle-widget", error: String(err) };
+    }
   }
 
   if (action === "extend-trial") {
     const shopId = formData.get("shopId") as string;
 
-    const current = await prisma.shopSettings.findUnique({
-      where: { id: shopId },
-      select: { trialEndsAt: true },
-    });
+    try {
+      const current = await prisma.shopSettings.findUnique({
+        where: { id: shopId },
+        select: { trialEndsAt: true },
+      });
 
-    const newTrialEnd = current?.trialEndsAt ? new Date(current.trialEndsAt) : new Date();
-    newTrialEnd.setDate(newTrialEnd.getDate() + 7);
+      const newTrialEnd = current?.trialEndsAt ? new Date(current.trialEndsAt) : new Date();
+      newTrialEnd.setDate(newTrialEnd.getDate() + 7);
 
-    const updated = await prisma.shopSettings.update({
-      where: { id: shopId },
-      data: { trialEndsAt: newTrialEnd },
-    });
+      const updated = await prisma.shopSettings.update({
+        where: { id: shopId },
+        data: { trialEndsAt: newTrialEnd },
+      });
 
-    return {
-      success: true,
-      type: "extend-trial",
-      newTrialEnd: updated.trialEndsAt?.toISOString(),
-    };
+      return {
+        success: true,
+        type: "extend-trial",
+        newTrialEnd: updated.trialEndsAt?.toISOString(),
+      };
+    } catch (err) {
+      console.error("[internal-admin] Failed to extend trial:", err);
+      return { success: false, type: "extend-trial", error: String(err) };
+    }
   }
 
   if (action === "update-health") {
     const shopId = formData.get("shopId") as string;
     const healthScore = formData.get("healthScore") as "green" | "yellow" | "red";
 
-    await prisma.shopSettings.update({
-      where: { id: shopId },
-      data: { healthScore },
-    });
+    try {
+      await prisma.shopSettings.update({
+        where: { id: shopId },
+        data: { healthScore },
+      });
 
-    return { success: true, type: "update-health" };
+      return { success: true, type: "update-health" };
+    } catch (err) {
+      console.error("[internal-admin] Failed to update health score:", err);
+      return { success: false, type: "update-health", error: String(err) };
+    }
   }
 
   if (action === "toggle-replied") {
     const feedbackId = formData.get("feedbackId") as string;
 
-    const current = await prisma.feedback.findUnique({
-      where: { id: feedbackId },
-      select: { replied: true },
-    });
+    try {
+      const current = await prisma.feedback.findUnique({
+        where: { id: feedbackId },
+        select: { replied: true },
+      });
 
-    await prisma.feedback.update({
-      where: { id: feedbackId },
-      data: { replied: !current?.replied },
-    });
+      await prisma.feedback.update({
+        where: { id: feedbackId },
+        data: { replied: !current?.replied },
+      });
 
-    return { success: true, type: "toggle-replied", replied: !current?.replied };
+      return { success: true, type: "toggle-replied", replied: !current?.replied };
+    } catch (err) {
+      console.error("[internal-admin] Failed to toggle feedback replied:", err);
+      return { success: false, type: "toggle-replied", error: String(err) };
+    }
   }
 
   throw new Response("Unknown action", { status: 400 });
