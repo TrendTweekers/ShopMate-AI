@@ -62,7 +62,7 @@ export async function fetchProductsForShop(
         },
         body: JSON.stringify({
           query: `{
-            products(first: 5, query: "${query.replace(/"/g, '\\"')}", sortKey: BEST_SELLING) {
+            products(first: 5, query: "${query.replace(/"/g, '\\"')}", sortKey: BEST_SELLER) {
               nodes {
                 id
                 title
