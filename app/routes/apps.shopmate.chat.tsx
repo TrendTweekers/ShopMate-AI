@@ -418,6 +418,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     products = result.products as ProductResult[];
     featureError = result.error;
 
+    console.log(`[appProxy] Product fetch returned ${products.length} product(s)`);
+
     if (result.error) {
       console.error("[appProxy] Product fetch error:", result.error);
     }
@@ -456,15 +458,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   } else if (extraContext.startsWith("NO_ADMIN_CTX_ORDER:")) {
     extraContextForAI = "Order tracking is temporarily unavailable due to a configuration issue. Apologise and ask the customer to contact the store directly or check their confirmation email for a tracking link.";
   } else if (extraContext.startsWith("NO_ADMIN_CTX_PRODUCT:")) {
-    extraContextForAI = `The live product catalog is temporarily unavailable. Apologise briefly and direct the customer to browse products directly at https://${shop}/collections/all where they can see everything available.`;
+    extraContextForAI = `No products are currently available due to a configuration issue. Apologise briefly and direct the customer to browse products directly at https://${shop}/collections/all where they can see everything available.`;
   } else if (extraContext.startsWith("PRODUCT_ACCESS_ERROR:")) {
-    extraContextForAI = `Product catalog access failed (likely a permissions issue). Apologise briefly and direct the customer to browse products directly at https://${shop}/collections/all.`;
+    extraContextForAI = `No products are currently available due to a permissions issue. Apologise briefly and direct the customer to browse products directly at https://${shop}/collections/all.`;
   } else if (extraContext.startsWith("PRODUCT_EMPTY:")) {
-    extraContextForAI = `No products matched the customer's query in the catalog. Suggest they browse all products at https://${shop}/collections/all or try a different search term.`;
+    extraContextForAI = `No products matched the customer's query. Suggest they browse all products at https://${shop}/collections/all or try a different search term.`;
   } else if (extraContext.startsWith("PRODUCT_EXCEPTION:")) {
-    extraContextForAI = `Product information is temporarily unavailable due to a technical issue. Apologise briefly and direct the customer to https://${shop}/collections/all to browse directly.`;
+    extraContextForAI = `No products are currently available due to a technical issue. Apologise briefly and direct the customer to https://${shop}/collections/all to browse directly.`;
+  } else if (extraContext.startsWith("RECOMMENDED PRODUCTS:")) {
+    // Products successfully fetched — tell AI to use them
+    extraContextForAI = `You have access to the following products from this store:\n${extraContext.replace("RECOMMENDED PRODUCTS:", "").trim()}\n\nUse these products to answer the customer's questions directly.`;
   } else {
-    // Passes through ORDER FOUND context, RECOMMENDED PRODUCTS context, etc.
+    // Passes through ORDER FOUND context, etc.
     extraContextForAI = extraContext;
   }
 
