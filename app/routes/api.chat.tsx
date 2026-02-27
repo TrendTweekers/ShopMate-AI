@@ -86,18 +86,20 @@ const ORDER_QUERY = `#graphql
 
 const PRODUCTS_QUERY = `#graphql
   query GetProducts($query: String!) {
-    products(first: 5, query: $query, sortKey: BEST_SELLING) {
-      nodes {
-        id
-        title
-        handle
-        featuredImage {
-          url
-        }
-        priceRangeV2 {
-          minVariantPrice {
-            amount
-            currencyCode
+    products(first: 5, query: $query) {
+      edges {
+        node {
+          id
+          title
+          handle
+          featuredImage {
+            url
+          }
+          priceRangeV2 {
+            minVariantPrice {
+              amount
+              currencyCode
+            }
           }
         }
       }
@@ -199,18 +201,22 @@ async function fetchProducts(
     const json = (await response.json()) as {
       data?: {
         products?: {
-          nodes?: Array<{
-            id?: string;
-            title?: string;
-            handle?: string;
-            featuredImage?: { url?: string } | null;
-            priceRangeV2?: { minVariantPrice?: { amount?: string; currencyCode?: string } };
+          edges?: Array<{
+            node?: {
+              id?: string;
+              title?: string;
+              handle?: string;
+              featuredImage?: { url?: string } | null;
+              priceRangeV2?: { minVariantPrice?: { amount?: string; currencyCode?: string } };
+            };
           }>;
         };
       };
     };
 
-    const nodes = json?.data?.products?.nodes ?? [];
+    const edges = json?.data?.products?.edges ?? [];
+    const nodes = edges.map((e) => e.node).filter((n): n is NonNullable<typeof n> => n != null);
+
     if (nodes.length === 0) {
       return { context: "No products found matching that query.", products: [] };
     }
