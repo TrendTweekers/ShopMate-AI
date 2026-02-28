@@ -146,17 +146,39 @@
       display: flex; align-items: center; justify-content: center;
     }
     .sm-header-icon svg { width: 16px; height: 16px; }
-    /* Logo image shown in place of the icon when a logoUrl is available */
-    .sm-header-logo {
-      height: 28px;
-      width: auto;
-      object-fit: contain;
-      /* Invert to white since the header has a coloured gradient background */
-      filter: brightness(0) invert(1);
+    /* Circular SM initials avatar in header */
+    .sm-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.25);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       flex-shrink: 0;
+      letter-spacing: 0.04em;
+      border: 2px solid rgba(255,255,255,0.4);
     }
-    .sm-header-name { color: #fff; font-weight: 600; font-size: 14px; line-height: 1.2; }
-    .sm-header-sub  { color: rgba(255,255,255,.7); font-size: 11px; }
+    .sm-header-info { display: flex; flex-direction: column; flex: 1; }
+    .sm-header-name { color: #fff; font-weight: 700; font-size: 15px; line-height: 1.2; }
+    .sm-header-sub  { color: rgba(255,255,255,.75); font-size: 11px; margin-top: 2px; }
+    .sm-header-close {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.15);
+      border: none;
+      color: #fff;
+      font-size: 18px;
+      line-height: 1;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background .2s;
+    }
+    .sm-header-close:hover { background: rgba(255,255,255,0.28); }
 
     .sm-messages {
       flex: 1;
@@ -852,18 +874,20 @@
     // Header
     var header = document.createElement("div");
     header.className = "sm-header";
-    // Show the ShopMate logo if a URL was injected by the Liquid template;
-    // fall back to the generic icon circle if not available.
-    var headerLeft = LOGO_URL
-      ? `<img src="${escHtml(LOGO_URL)}" alt="ShopMate AI" class="sm-header-logo" />`
-      : `<div class="sm-header-icon">${iconChat}</div>`;
+    // Derive initials from BOT_NAME (first letters of first two words, max 2 chars)
+    var avatarInitials = BOT_NAME.trim().split(/\s+/).slice(0, 2).map(function(w){ return w[0]; }).join("").toUpperCase() || "SM";
     header.innerHTML = `
-      ${headerLeft}
-      <div>
+      <div class="sm-avatar">${escHtml(avatarInitials)}</div>
+      <div class="sm-header-info">
         <div class="sm-header-name">${escHtml(BOT_NAME)}</div>
-        <div class="sm-header-sub">Always here to help</div>
+        <div class="sm-header-sub">Shop Assistant</div>
       </div>
+      <button class="sm-header-close" aria-label="Close chat">&times;</button>
     `;
+    // Wire the header close button to togglePanel
+    header.querySelector(".sm-header-close").addEventListener("click", function() {
+      togglePanel();
+    });
 
     // Message list
     msgList = document.createElement("div");
