@@ -27,7 +27,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     shop,
     botName: settings.botName ?? "ShopMate",
     greeting: settings.greeting ?? "Hi! 👋 How can I help you today?",
-    tone: settings.tone ?? "Friendly",
+    tone: (settings.tone ?? "Friendly").toLowerCase(),
     quickActions: settings.quickActions ?? ["Track order", "Product recommendations", "Returns & exchanges"],
   };
 };
@@ -96,6 +96,12 @@ const steps = [
   { title: "Done", description: "Ready to go!", icon: Check },
 ];
 
+const toneOptions = [
+  { value: "friendly", label: "Friendly" },
+  { value: "professional", label: "Professional" },
+  { value: "casual", label: "Casual" },
+];
+
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function SetupWizard() {
   const loaderData = useLoaderData<typeof loader>();
@@ -128,7 +134,9 @@ export default function SetupWizard() {
       // Step 1: Save bot config
       formData.append("botName", botName);
       formData.append("greeting", greeting);
-      formData.append("tone", tone);
+      // Convert tone value to title case for storage
+      const toneCapitalized = tone.charAt(0).toUpperCase() + tone.slice(1);
+      formData.append("tone", toneCapitalized);
     } else if (currentStep === 1) {
       // Step 2: Save quick actions
       formData.append("quickActions", JSON.stringify(quickActions));
@@ -161,9 +169,9 @@ export default function SetupWizard() {
 
   return (
     <AdminLayout>
-      <div className="max-w-6xl mx-auto space-y-6">
+      <div style={{ maxWidth: "1400px", margin: "0 auto", padding: "0 20px" }}>
         {/* Logo */}
-        <div style={{ display: "flex", justifyContent: "center", paddingBottom: 4 }}>
+        <div style={{ display: "flex", justifyContent: "center", paddingBottom: 16, marginBottom: 20 }}>
           <img
             src="/assets/shopmatelogo.png"
             alt="ShopMate AI"
@@ -171,9 +179,9 @@ export default function SetupWizard() {
           />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left: Wizard (2 cols on desktop) */}
-          <div className="lg:col-span-2 space-y-6">
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 24, alignItems: "start" }}>
+          {/* Left: Wizard Form (65%) */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
             {/* Progress */}
             <div className="polaris-card">
               <div className="flex items-center justify-between">
@@ -236,17 +244,17 @@ export default function SetupWizard() {
                   <div>
                     <label className="text-sm font-semibold text-foreground block mb-2">Tone</label>
                     <div className="flex gap-2">
-                      {["Friendly", "Professional", "Casual"].map((t) => (
+                      {toneOptions.map((opt) => (
                         <button
-                          key={t}
-                          onClick={() => setTone(t)}
+                          key={opt.value}
+                          onClick={() => setTone(opt.value)}
                           className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${
-                            t === tone
+                            opt.value === tone
                               ? "bg-primary text-primary-foreground border-primary"
                               : "border-border text-muted-foreground hover:bg-surface-hover"
                           }`}
                         >
-                          {t}
+                          {opt.label}
                         </button>
                       ))}
                     </div>
@@ -311,7 +319,7 @@ export default function SetupWizard() {
             </div>
 
             {/* Navigation */}
-            <div className="flex justify-between">
+            <div className="flex justify-between gap-2">
               <Button
                 variant="outline"
                 onClick={() => setCurrentStep(Math.max(0, currentStep - 1))}
@@ -335,47 +343,91 @@ export default function SetupWizard() {
                   : isSubmitting
                   ? "Saving…"
                   : "Next"}
-                <ArrowRight className="w-4 h-4 ml-1" />
+                {currentStep < 2 && <ArrowRight className="w-4 h-4 ml-1" />}
               </Button>
             </div>
           </div>
 
-          {/* Right: Live Widget Preview */}
-          <div className="lg:col-span-1">
-            <div className="sticky top-6">
-              <div className="polaris-card p-4">
-                <h4 className="text-sm font-semibold text-foreground mb-3">Live Preview</h4>
-                {/* Phone frame */}
-                <div className="relative w-full aspect-[9/16] bg-card rounded-[2rem] border-[6px] border-foreground/10 shadow-lg overflow-hidden flex flex-col">
-                  {/* Status bar */}
-                  <div className="h-6 bg-card flex items-center justify-center flex-shrink-0">
-                    <div className="w-16 h-3 bg-foreground/10 rounded-full" />
+          {/* Right: Live Widget Preview (35%) - Fixed Sidebar */}
+          <div style={{ position: "sticky", top: 20, height: "fit-content" }}>
+            <div className="polaris-card p-4">
+              <h4 className="text-sm font-semibold text-foreground mb-3">Live Preview</h4>
+              {/* Phone frame */}
+              <div
+                style={{
+                  position: "relative",
+                  width: "100%",
+                  aspectRatio: "9 / 16",
+                  backgroundColor: "hsl(0 0% 100%)",
+                  borderRadius: "2rem",
+                  border: "6px solid hsl(0 0% 5% / 0.1)",
+                  boxShadow: "0 20px 25px -5px rgb(0 0 0 / 0.1)",
+                  overflow: "hidden",
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                {/* Status bar */}
+                <div
+                  style={{
+                    height: 24,
+                    backgroundColor: "hsl(0 0% 100%)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 64,
+                      height: 12,
+                      backgroundColor: "hsl(0 0% 5% / 0.1)",
+                      borderRadius: 999,
+                    }}
+                  />
+                </div>
+
+                {/* Mock storefront */}
+                <div
+                  style={{
+                    flex: 1,
+                    backgroundColor: "hsl(0 0% 97%)",
+                    position: "relative",
+                    overflow: "hidden",
+                  }}
+                >
+                  {/* Fake store content */}
+                  <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 12, marginBottom: 64 }}>
+                    <div style={{ height: 16, width: 80, backgroundColor: "hsl(0 0% 92%)", borderRadius: 4 }} />
+                    <div
+                      style={{
+                        height: 96,
+                        backgroundColor: "hsl(0 0% 92%)",
+                        borderRadius: 8,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "2rem",
+                      }}
+                    >
+                      🛍️
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      <div style={{ height: 12, width: 128, backgroundColor: "hsl(0 0% 92%)", borderRadius: 2 }} />
+                      <div style={{ height: 12, width: 96, backgroundColor: "hsl(0 0% 92%)", borderRadius: 2 }} />
+                    </div>
                   </div>
 
-                  {/* Mock storefront */}
-                  <div className="flex-1 bg-background relative overflow-hidden">
-                    {/* Fake store content */}
-                    <div className="p-3 space-y-3 mb-16">
-                      <div className="h-4 w-20 bg-muted rounded" />
-                      <div className="h-24 bg-muted rounded-lg flex items-center justify-center">
-                        <span className="text-2xl">🛍️</span>
-                      </div>
-                      <div className="space-y-1">
-                        <div className="h-3 w-32 bg-muted rounded" />
-                        <div className="h-3 w-24 bg-muted rounded" />
-                      </div>
-                    </div>
-
-                    {/* Widget overlay */}
-                    <div className="absolute inset-0">
-                      <ChatWidget shop={loaderData.shop} />
-                    </div>
+                  {/* Widget overlay */}
+                  <div style={{ position: "absolute", inset: 0 }}>
+                    <ChatWidget shop={loaderData.shop} />
                   </div>
                 </div>
-                <p className="text-xs text-muted-foreground mt-3 text-center">
-                  This is how your widget looks on mobile
-                </p>
               </div>
+              <p style={{ fontSize: 12, color: "hsl(0 0% 50%)", marginTop: 12, textAlign: "center" }}>
+                This is how your widget looks on mobile
+              </p>
             </div>
           </div>
         </div>
