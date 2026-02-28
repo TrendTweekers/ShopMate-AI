@@ -17,7 +17,10 @@ export default function InstallPage() {
     }
     setError("");
     const shop = `${slug}.myshopify.com`;
-    window.location.href = `https://shopmate-ai-helper-production.up.railway.app/auth?shop=${shop}`;
+    const clientId = "9b1e966350cee0ffb9d2b6f46719da03";
+    const scopes = "write_products,read_orders";
+    const redirectUri = "https://shopmate-ai-helper-production.up.railway.app/auth/callback";
+    window.location.href = `https://${shop}/admin/oauth/authorize?client_id=${clientId}&scope=${scopes}&redirect_uri=${encodeURIComponent(redirectUri)}`;
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
