@@ -17,7 +17,7 @@ export default function InstallPage() {
     }
     setError("");
     const shop = `${slug}.myshopify.com`;
-    window.location.href = `https://shopmate-ai-helper-production.up.railway.app/?shop=${shop}`;
+    window.location.href = `https://shopmate-ai-helper-production.up.railway.app/auth?shop=${shop}`;
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
