@@ -57,6 +57,12 @@ model ShopSettings {
   healthScore     String    @default("green")   // "green" | "yellow" | "red"
   widgetEnabled   Boolean   @default(true)      // admin can toggle widget on/off
   trialEndsAt     DateTime?                     // when the trial expires (for trial plans)
+  // Setup Wizard customization
+  setupCompleted  Boolean   @default(false)     // has merchant completed onboarding
+  botName         String    @default("ShopMate") // custom AI assistant name
+  greeting        String    @default("Hi! 👋 How can I help you today?") // initial greeting message
+  tone            String    @default("Friendly") // "Friendly" | "Professional" | "Casual"
+  quickActions    String[]  @default(["Track order", "Product recommendations", "Returns & exchanges"]) // enabled quick action buttons
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 }
