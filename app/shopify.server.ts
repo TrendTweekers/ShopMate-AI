@@ -42,7 +42,36 @@ const shopify = shopifyApp({
     afterAuth: async ({ admin, session }) => {
       if (!admin) return;
       const shop = session.shop;
-      console.log(`[afterAuth] Running policy import for newly authenticated shop: ${shop}`);
+      console.log(`[afterAuth] Running setup for newly authenticated shop: ${shop}`);
+
+      // ── Auto-enable widget on install ──
+      // Check if ShopSettings exists. If not (new install), create with widgetEnabled: true.
+      // If it exists (reinstall), don't override existing settings.
+      try {
+        const existing = await prisma.shopSettings.findUnique({
+          where: { shop },
+          select: { id: true },
+        });
+
+        if (!existing) {
+          // New install — auto-create with widget enabled
+          await prisma.shopSettings.create({
+            data: {
+              shop,
+              widgetEnabled: true,
+              setupCompleted: false,
+              lastActiveAt: new Date(),
+            },
+          });
+          console.log(`[afterAuth] ✅ Auto-enabled widget for new install: ${shop}`);
+        } else {
+          console.log(`[afterAuth] Shop settings already exist, skipping auto-enable: ${shop}`);
+        }
+      } catch (err) {
+        console.error(`[afterAuth] Failed to auto-enable widget for ${shop}:`, err);
+      }
+
+      // ── Import store policies asynchronously ──
       importStorePolicies(shop, admin).catch((err) => {
         console.error(`[afterAuth] Policy import failed for ${shop}:`, err);
       });
