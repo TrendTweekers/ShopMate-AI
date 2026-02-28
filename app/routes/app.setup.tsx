@@ -2,11 +2,11 @@ import { useState, useEffect } from "react";
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useFetcher, useLoaderData, useNavigate } from "react-router";
 import AdminLayout from "~/components/admin/AdminLayout";
-import { Check, ArrowRight, ArrowLeft, Bot, Package, Sparkles, BookOpen, Zap } from "lucide-react";
+import ChatWidget from "~/components/storefront/ChatWidget";
+import { Check, ArrowRight, ArrowLeft, Bot, Sparkles, RotateCcw, MessageSquare } from "lucide-react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import { Switch } from "~/components/ui/switch";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "~/db.server";
@@ -16,288 +16,370 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const shop = session.shop;
 
-  // ── Update last active timestamp ──
-  await prisma.shopSettings.upsert({
+  // ── Update last active timestamp & fetch current settings ──
+  const settings = await prisma.shopSettings.upsert({
     where: { shop },
     create: { shop, lastActiveAt: new Date() },
     update: { lastActiveAt: new Date() },
   });
 
-  // Fetch active KB entries so step 3 of the wizard shows what was imported
-  const kbEntries = await prisma.knowledgeBase.findMany({
-    where: { shop, status: "active" },
-    select: { title: true, type: true, source: true },
-    orderBy: { createdAt: "asc" },
-  });
-
-  return { kbEntries };
+  return {
+    shop,
+    botName: settings.botName ?? "ShopMate",
+    greeting: settings.greeting ?? "Hi! 👋 How can I help you today?",
+    tone: settings.tone ?? "Friendly",
+    quickActions: settings.quickActions ?? ["Track order", "Product recommendations", "Returns & exchanges"],
+  };
 };
 
 // ─── Action ──────────────────────────────────────────────────────────────────
-// The Activate button POSTs here.  We use it to persist the "activated" flag
-// and return a success signal back to the client.
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
-  // In the future: save ShopSettings.activated = true via Prisma here.
-  // For now just acknowledge — the client will show the toast + redirect.
-  console.log(`[ShopMate] Activated for shop: ${session.shop}`);
-  return Response.json({ ok: true, shop: session.shop });
+  const shop = session.shop;
+
+  if (request.method !== "POST") {
+    return Response.json({ ok: false }, { status: 405 });
+  }
+
+  const formData = await request.formData();
+  const step = formData.get("step");
+
+  try {
+    if (step === "1") {
+      // ── Step 1: Save bot name, greeting, tone ──
+      const botName = (formData.get("botName") as string)?.trim() || "ShopMate";
+      const greeting = (formData.get("greeting") as string)?.trim() || "Hi! 👋 How can I help you today?";
+      const tone = (formData.get("tone") as string)?.trim() || "Friendly";
+
+      await prisma.shopSettings.update({
+        where: { shop },
+        data: { botName, greeting, tone },
+      });
+
+      return Response.json({ ok: true, step: 1 });
+    }
+
+    if (step === "2") {
+      // ── Step 2: Save quick action buttons selection ──
+      const quickActionsStr = formData.get("quickActions") as string;
+      const quickActions = quickActionsStr ? JSON.parse(quickActionsStr) : [];
+
+      await prisma.shopSettings.update({
+        where: { shop },
+        data: { quickActions },
+      });
+
+      return Response.json({ ok: true, step: 2 });
+    }
+
+    if (step === "3") {
+      // ── Step 3: Mark setup as completed ──
+      await prisma.shopSettings.update({
+        where: { shop },
+        data: { setupCompleted: true },
+      });
+
+      return Response.json({ ok: true, step: 3, redirect: "/app" });
+    }
+
+    return Response.json({ ok: false, error: "Unknown step" }, { status: 400 });
+  } catch (err) {
+    console.error(`[app.setup] Error saving setup for ${shop}:`, err);
+    return Response.json({ ok: false }, { status: 500 });
+  }
 };
 
 // ─── Steps ───────────────────────────────────────────────────────────────────
 const steps = [
-  { title: "Welcome", description: "Configure your AI assistant", icon: Bot },
-  { title: "Order Tracking", description: "Set up order lookup", icon: Package },
-  { title: "Recommendations", description: "Product suggestion engine", icon: Sparkles },
-  { title: "Knowledge Base", description: "Store policies & FAQs", icon: BookOpen },
-  { title: "Go Live", description: "Activate on your store", icon: Zap },
+  { title: "Customize", description: "Name, greeting & tone", icon: Bot },
+  { title: "Quick Actions", description: "Choose what appears first", icon: Sparkles },
+  { title: "Done", description: "Ready to go!", icon: Check },
 ];
 
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function SetupWizard() {
-  const { kbEntries } = useLoaderData<typeof loader>();
+  const loaderData = useLoaderData<typeof loader>();
   const [currentStep, setCurrentStep] = useState(0);
-  const fetcher = useFetcher<{ ok: boolean }>();
+  const [botName, setBotName] = useState(loaderData.botName);
+  const [greeting, setGreeting] = useState(loaderData.greeting);
+  const [tone, setTone] = useState(loaderData.tone);
+  const [quickActions, setQuickActions] = useState(loaderData.quickActions);
+  const fetcher = useFetcher<{ ok: boolean; step: number; redirect?: string }>();
   const shopify = useAppBridge();
   const navigate = useNavigate();
 
-  const isActivating = fetcher.state !== "idle";
-  const activationDone = fetcher.data?.ok === true;
+  const isSubmitting = fetcher.state !== "idle";
+  const saveSuccess = fetcher.data?.ok === true;
 
-  // When the fetcher settles with ok:true, show an App Bridge toast then
-  // navigate to the dashboard using React Router (not shopify.navigate which
-  // doesn't exist on ShopifyGlobal).
+  // ── Auto-redirect when setup completes ──
   useEffect(() => {
-    if (activationDone && fetcher.state === "idle") {
-      shopify.toast.show("ShopMate AI activated! 🎉", { duration: 4000 });
-      const timer = setTimeout(() => navigate("/app"), 1500);
+    if (saveSuccess && fetcher.data?.redirect && fetcher.state === "idle") {
+      shopify.toast.show("🎉 Setup complete! Welcome to ShopMate.", { duration: 3000 });
+      const timer = setTimeout(() => navigate(fetcher.data!.redirect!), 1000);
       return () => clearTimeout(timer);
     }
-  }, [activationDone, fetcher.state, shopify, navigate]);
+  }, [saveSuccess, fetcher.state, shopify, navigate, fetcher.data]);
 
-  const handleActivate = () => {
-    fetcher.submit({}, { method: "POST", action: "/app/setup" });
+  const handleNext = async () => {
+    const formData = new FormData();
+    formData.append("step", String(currentStep + 1));
+
+    if (currentStep === 0) {
+      // Step 1: Save bot config
+      formData.append("botName", botName);
+      formData.append("greeting", greeting);
+      formData.append("tone", tone);
+    } else if (currentStep === 1) {
+      // Step 2: Save quick actions
+      formData.append("quickActions", JSON.stringify(quickActions));
+    }
+
+    fetcher.submit(formData, { method: "POST" });
+
+    // Only advance after submit completes successfully
+    if (currentStep < steps.length - 1) {
+      setTimeout(() => {
+        setCurrentStep(currentStep + 1);
+      }, 100);
+    }
   };
+
+  const handleQuickActionToggle = (action: string) => {
+    if (quickActions.includes(action)) {
+      setQuickActions(quickActions.filter((a) => a !== action));
+    } else {
+      setQuickActions([...quickActions, action]);
+    }
+  };
+
+  const allQuickActions = [
+    { label: "Track order", icon: "📦" },
+    { label: "Product recommendations", icon: "✨" },
+    { label: "Returns & exchanges", icon: "🔄" },
+    { label: "Talk to human", icon: "👤" },
+  ];
 
   return (
     <AdminLayout>
-      <div className="max-w-3xl mx-auto space-y-6">
-      {/* Logo */}
-      <div style={{ display: "flex", justifyContent: "center", paddingBottom: 4 }}>
-        <img
-          src="/assets/shopmatelogo.png"
-          alt="ShopMate AI"
-          style={{ height: 40, width: "auto", objectFit: "contain" }}
-        />
-      </div>
+      <div className="max-w-6xl mx-auto space-y-6">
+        {/* Logo */}
+        <div style={{ display: "flex", justifyContent: "center", paddingBottom: 4 }}>
+          <img
+            src="/assets/shopmatelogo.png"
+            alt="ShopMate AI"
+            style={{ height: 40, width: "auto", objectFit: "contain" }}
+          />
+        </div>
 
-      {/* Progress */}
-      <div className="polaris-card">
-        <div className="flex items-center justify-between">
-          {steps.map((step, i) => (
-            <div key={i} className="flex items-center gap-2 flex-1">
-              <div
-                className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0 transition-colors ${
-                  i <= currentStep
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground"
-                }`}
-              >
-                {i < currentStep ? <Check className="w-4 h-4" /> : i + 1}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left: Wizard (2 cols on desktop) */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Progress */}
+            <div className="polaris-card">
+              <div className="flex items-center justify-between">
+                {steps.map((step, i) => (
+                  <div key={i} className="flex items-center gap-2 flex-1">
+                    <div
+                      className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0 transition-colors ${
+                        i <= currentStep
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {i < currentStep ? <Check className="w-4 h-4" /> : i + 1}
+                    </div>
+                    {i < steps.length - 1 && (
+                      <div
+                        className={`h-0.5 flex-1 rounded transition-colors ${
+                          i < currentStep ? "bg-primary" : "bg-border"
+                        }`}
+                      />
+                    )}
+                  </div>
+                ))}
               </div>
-              {i < steps.length - 1 && (
-                <div
-                  className={`h-0.5 flex-1 rounded transition-colors ${
-                    i < currentStep ? "bg-primary" : "bg-border"
-                  }`}
-                />
+              <div className="mt-4">
+                <h3 className="text-base font-semibold text-foreground">{steps[currentStep].title}</h3>
+                <p className="text-sm text-muted-foreground">{steps[currentStep].description}</p>
+              </div>
+            </div>
+
+            {/* Step Content */}
+            <div className="polaris-card animate-fade-in" key={currentStep}>
+              {/* Step 1: Customize */}
+              {currentStep === 0 && (
+                <div className="space-y-5">
+                  <div>
+                    <label className="text-sm font-semibold text-foreground block mb-2">Bot Name</label>
+                    <Input
+                      value={botName}
+                      onChange={(e) => setBotName(e.target.value)}
+                      placeholder="ShopMate"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Customers will see this name in the chat header
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-semibold text-foreground block mb-2">Greeting Message</label>
+                    <Input
+                      value={greeting}
+                      onChange={(e) => setGreeting(e.target.value)}
+                      placeholder="Hi! 👋 How can I help you today?"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      First message customers see when they open the chat
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-semibold text-foreground block mb-2">Tone</label>
+                    <div className="flex gap-2">
+                      {["Friendly", "Professional", "Casual"].map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => setTone(t)}
+                          className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${
+                            t === tone
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "border-border text-muted-foreground hover:bg-surface-hover"
+                          }`}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      This affects how the AI responds to customer questions
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 2: Quick Actions */}
+              {currentStep === 1 && (
+                <div className="space-y-4">
+                  <p className="text-sm text-muted-foreground">
+                    Select which quick action buttons to show on the home screen. At least one is required.
+                  </p>
+                  <div className="space-y-2">
+                    {allQuickActions.map((action) => (
+                      <button
+                        key={action.label}
+                        onClick={() => handleQuickActionToggle(action.label)}
+                        className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-colors text-left ${
+                          quickActions.includes(action.label)
+                            ? "bg-primary/10 border-primary"
+                            : "border-border hover:bg-muted/50"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={quickActions.includes(action.label)}
+                          onChange={() => {}}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-lg">{action.icon}</span>
+                        <span className="text-sm font-medium text-foreground">{action.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {quickActions.length === 0 && (
+                    <p className="text-xs text-destructive">
+                      Please select at least one quick action
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Step 3: Done */}
+              {currentStep === 2 && (
+                <div className="text-center py-8 space-y-4">
+                  <div className="w-16 h-16 rounded-full bg-accent flex items-center justify-center mx-auto">
+                    <Check className="w-8 h-8 text-accent-foreground" />
+                  </div>
+                  <h4 className="text-lg font-semibold text-foreground">All Set! 🎉</h4>
+                  <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                    ShopMate is ready to go. Your chat widget is live on your storefront with the settings you configured.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    You can change these settings anytime from the dashboard.
+                  </p>
+                </div>
               )}
             </div>
-          ))}
-        </div>
-        <div className="mt-4">
-          <h3 className="text-base font-semibold text-foreground">{steps[currentStep].title}</h3>
-          <p className="text-sm text-muted-foreground">{steps[currentStep].description}</p>
-        </div>
-      </div>
 
-      {/* Step Content */}
-      <div className="polaris-card animate-fade-in" key={currentStep}>
-        {currentStep === 0 && (
-          <div className="space-y-4">
-            <h4 className="text-sm font-semibold text-foreground">Bot Name</h4>
-            <Input placeholder="ShopMate" defaultValue="ShopMate" />
-            <h4 className="text-sm font-semibold text-foreground">Greeting Message</h4>
-            <Input
-              placeholder="Hi! How can I help you today?"
-              defaultValue="Hi! 👋 How can I help you today?"
-            />
-            <h4 className="text-sm font-semibold text-foreground">Tone</h4>
-            <div className="flex gap-2">
-              {["Friendly", "Professional", "Casual"].map((t) => (
-                <button
-                  key={t}
-                  className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${
-                    t === "Friendly"
-                      ? "bg-surface-selected border-primary text-accent-foreground"
-                      : "border-border text-muted-foreground hover:bg-surface-hover"
-                  }`}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {currentStep === 1 && (
-          <div className="space-y-4">
-            <h4 className="text-sm font-semibold text-foreground">Required Fields</h4>
-            <div className="space-y-3">
-              {["Order Number", "Email Address", "Phone Number"].map((field, i) => (
-                <div key={field} className="flex items-center justify-between">
-                  <span className="text-sm text-foreground">{field}</span>
-                  <Switch defaultChecked={i < 2} />
-                </div>
-              ))}
-            </div>
-            <h4 className="text-sm font-semibold text-foreground">Fallback Message</h4>
-            <Input
-              placeholder="We couldn't find your order..."
-              defaultValue="We couldn't find your order. Please double-check your details or contact support."
-            />
-          </div>
-        )}
-
-        {currentStep === 2 && (
-          <div className="space-y-4">
-            <h4 className="text-sm font-semibold text-foreground">Strategy</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {[
-                { title: "Best Sellers", desc: "Recommend top-selling products" },
-                { title: "Personalized", desc: "Based on browsing history" },
-                { title: "Complementary", desc: "Products that go well together" },
-                { title: "New Arrivals", desc: "Latest products in store" },
-              ].map((s, i) => (
-                <button
-                  key={s.title}
-                  className={`text-left p-3 rounded-lg border transition-colors ${
-                    i === 1
-                      ? "bg-surface-selected border-primary"
-                      : "border-border hover:bg-surface-hover"
-                  }`}
-                >
-                  <p className="text-sm font-medium text-foreground">{s.title}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{s.desc}</p>
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-foreground">Hide out-of-stock items</span>
-              <Switch defaultChecked />
-            </div>
-          </div>
-        )}
-
-        {currentStep === 3 && (
-          <div className="space-y-4">
-            <h4 className="text-sm font-semibold text-foreground">Knowledge Base</h4>
-
-            {kbEntries.length > 0 ? (
-              <>
-                <p className="text-sm text-muted-foreground">
-                  ✓ {kbEntries.length} polic{kbEntries.length === 1 ? "y was" : "ies were"} automatically imported from your Shopify store.
-                  The AI will use these to answer customer questions.
-                </p>
-                <div className="space-y-2">
-                  {kbEntries.map((entry) => (
-                    <div
-                      key={entry.type}
-                      className="flex items-center justify-between p-3 border border-border rounded-lg"
-                    >
-                      <div className="flex items-center gap-2">
-                        <BookOpen className="w-4 h-4 text-muted-foreground" />
-                        <span className="text-sm text-foreground">{entry.title}</span>
-                      </div>
-                      <span className="polaris-badge polaris-badge-success">
-                        {entry.source === "shopify_import" ? "Auto-imported" : "Manual"}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  You can edit or add more entries in the Knowledge Base page.
-                </p>
-              </>
-            ) : (
-              <div
-                style={{
-                  display: "flex", alignItems: "flex-start", gap: 12,
-                  padding: "14px 16px", borderRadius: 10,
-                  background: "#f0fdf4", border: "1px solid #86efac",
-                }}
+            {/* Navigation */}
+            <div className="flex justify-between">
+              <Button
+                variant="outline"
+                onClick={() => setCurrentStep(Math.max(0, currentStep - 1))}
+                disabled={currentStep === 0}
               >
-                <BookOpen size={18} color="#15803d" style={{ flexShrink: 0, marginTop: 1 }} />
-                <div>
-                  <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#15803d" }}>
-                    You're almost there!
-                  </p>
-                  <p style={{ margin: "5px 0 0", fontSize: 12, color: "#166534", lineHeight: 1.6 }}>
-                    Policies haven't been imported yet — that's totally fine at this stage.
-                    Once you finish setup, head to the{" "}
-                    <strong>Knowledge Base</strong> page to pull in your store's policies in one click.
-                    You can also add custom FAQs and answers any time.
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {currentStep === 4 && (
-          <div className="text-center py-8 space-y-4">
-            <div className="w-16 h-16 rounded-full bg-accent flex items-center justify-center mx-auto">
-              <Zap className="w-8 h-8 text-accent-foreground" />
+                <ArrowLeft className="w-4 h-4 mr-1" /> Back
+              </Button>
+              <Button
+                onClick={handleNext}
+                disabled={
+                  isSubmitting ||
+                  (currentStep === 0 && (!botName.trim() || !greeting.trim())) ||
+                  (currentStep === 1 && quickActions.length === 0)
+                }
+                className="bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                {currentStep === 2
+                  ? isSubmitting
+                    ? "Completing…"
+                    : "Go to Dashboard"
+                  : isSubmitting
+                  ? "Saving…"
+                  : "Next"}
+                <ArrowRight className="w-4 h-4 ml-1" />
+              </Button>
             </div>
-            <h4 className="text-lg font-semibold text-foreground">Ready to Go Live!</h4>
-            <p className="text-sm text-muted-foreground max-w-md mx-auto">
-              Your ShopMate AI assistant is configured and ready. Click "Activate" to add the chat
-              widget to your storefront.
-            </p>
-            <Button
-              onClick={handleActivate}
-              disabled={isActivating || activationDone}
-              className="bg-primary text-primary-foreground hover:bg-primary/90 px-8"
-            >
-              {isActivating
-                ? "Activating…"
-                : activationDone
-                ? "Activated ✓"
-                : "Activate ShopMate AI"}
-            </Button>
           </div>
-        )}
-      </div>
 
-      {/* Navigation */}
-      {currentStep < 4 && (
-        <div className="flex justify-between">
-          <Button
-            variant="outline"
-            onClick={() => setCurrentStep(Math.max(0, currentStep - 1))}
-            disabled={currentStep === 0}
-          >
-            <ArrowLeft className="w-4 h-4 mr-1" /> Back
-          </Button>
-          <Button
-            onClick={() => setCurrentStep(Math.min(4, currentStep + 1))}
-            className="bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            Next <ArrowRight className="w-4 h-4 ml-1" />
-          </Button>
+          {/* Right: Live Widget Preview */}
+          <div className="lg:col-span-1">
+            <div className="sticky top-6">
+              <div className="polaris-card p-4">
+                <h4 className="text-sm font-semibold text-foreground mb-3">Live Preview</h4>
+                {/* Phone frame */}
+                <div className="relative w-full aspect-[9/16] bg-card rounded-[2rem] border-[6px] border-foreground/10 shadow-lg overflow-hidden flex flex-col">
+                  {/* Status bar */}
+                  <div className="h-6 bg-card flex items-center justify-center flex-shrink-0">
+                    <div className="w-16 h-3 bg-foreground/10 rounded-full" />
+                  </div>
+
+                  {/* Mock storefront */}
+                  <div className="flex-1 bg-background relative overflow-hidden">
+                    {/* Fake store content */}
+                    <div className="p-3 space-y-3 mb-16">
+                      <div className="h-4 w-20 bg-muted rounded" />
+                      <div className="h-24 bg-muted rounded-lg flex items-center justify-center">
+                        <span className="text-2xl">🛍️</span>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="h-3 w-32 bg-muted rounded" />
+                        <div className="h-3 w-24 bg-muted rounded" />
+                      </div>
+                    </div>
+
+                    {/* Widget overlay */}
+                    <div className="absolute inset-0">
+                      <ChatWidget shop={loaderData.shop} />
+                    </div>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-3 text-center">
+                  This is how your widget looks on mobile
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
-      )}
-    </div>
+      </div>
     </AdminLayout>
   );
 }

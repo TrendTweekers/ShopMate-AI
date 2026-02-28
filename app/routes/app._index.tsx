@@ -183,6 +183,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     update: { plan: newPlan, lastActiveAt: new Date() },
   });
 
+  // ── Redirect to setup if not completed ──
+  // After install, merchants should go through the onboarding wizard first
+  if (!settings.setupCompleted) {
+    return redirect("/app/setup");
+  }
+
   // ── KPI totals ──
   const totalChats = await prisma.conversation.count({ where: { shop } });
   const totalMessages = await prisma.message.count({
