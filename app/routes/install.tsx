@@ -53,21 +53,16 @@ export default function InstallPage() {
         }}
       >
         {/* Logo */}
-        <div
+        <img
+          src="/assets/shopmatelogo.png"
+          alt="ShopMate AI"
           style={{
-            width: 64,
-            height: 64,
-            borderRadius: 16,
-            background: "linear-gradient(135deg, #008060 0%, #006048 100%)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            marginBottom: 20,
-            boxShadow: "0 4px 16px rgba(0,128,96,0.3)",
+            height: 72,
+            width: "auto",
+            objectFit: "contain",
+            marginBottom: 16,
           }}
-        >
-          <span style={{ fontSize: 28 }}>🤖</span>
-        </div>
+        />
 
         <h1
           style={{
