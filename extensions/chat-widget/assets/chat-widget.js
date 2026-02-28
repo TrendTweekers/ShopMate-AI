@@ -68,6 +68,8 @@
   let messages = [{ role: "bot", text: GREETING }];
   // Chips are shown until the user sends their first real message.
   let chipsVisible = QUICK_REPLIES.length > 0;
+  // Home view: show card-style quick actions until user sends first message.
+  let homeVisible = QUICK_REPLIES.length > 0;
   // Exit-intent nudge — shown once per session
   let nudgeShown = false;
   let nudgeEl = null;
@@ -350,6 +352,60 @@
       flex-shrink: 0;
       margin-top: 4px;
     }
+    /* ── Home view ───────────────────────────────────────────────────────────── */
+    .sm-home {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .sm-quick-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #6b7280;
+      margin: 0;
+    }
+    .sm-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .sm-action-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1.5px solid #e5e7eb;
+      background: #fff;
+      cursor: pointer;
+      text-align: left;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
+    }
+    .sm-action-card:hover {
+      background: #f9fafb;
+      border-color: ${PRIMARY}55;
+      box-shadow: 0 2px 8px rgba(0,0,0,.06);
+    }
+    .sm-action-icon {
+      width: 32px; height: 32px;
+      border-radius: 8px;
+      background: ${PRIMARY}1a;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      color: ${PRIMARY};
+    }
+    .sm-action-icon svg { width: 16px; height: 16px; }
+    .sm-action-label {
+      font-size: 13px;
+      font-weight: 500;
+      color: #111827;
+      flex: 1;
+    }
+
     /* Attention pulse on the bubble when nudge is visible */
     #shopmate-widget-bubble.sm-pulse {
       box-shadow: 0 8px 32px rgba(0,0,0,.12), 0 0 0 0 ${PRIMARY};
@@ -476,6 +532,15 @@
   }
 
   function renderMessages() {
+    // Home view: show card-style quick actions until user sends first message.
+    if (homeVisible) {
+      msgList.innerHTML = "";
+      msgList.appendChild(renderHomeView());
+      var oldChips = panel.querySelector(".sm-chips");
+      if (oldChips) oldChips.remove();
+      return;
+    }
+
     var html = messages.map(msgHtml).join("");
     if (isLoading) {
       html += `<div class="sm-msg-row bot"><div class="sm-typing"><div class="sm-dot"></div><div class="sm-dot"></div><div class="sm-dot"></div></div></div>`;
@@ -509,6 +574,70 @@
 
     // Insert chips between the message list and the input row.
     panel.insertBefore(row, panel.querySelector(".sm-input-row"));
+  }
+
+  // ── Quick-reply icon mapping ──────────────────────────────────────────────
+  function getQuickReplyIcon(label) {
+    var l = label.toLowerCase();
+    if (l.indexOf("track") !== -1 || (l.indexOf("order") !== -1 && l.indexOf("recommend") === -1)) {
+      // Package / box icon
+      return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>`;
+    }
+    if (l.indexOf("recommend") !== -1 || l.indexOf("product") !== -1) {
+      // Sparkles / star icon
+      return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>`;
+    }
+    if (l.indexOf("return") !== -1 || l.indexOf("exchange") !== -1 || l.indexOf("policy") !== -1) {
+      // RotateCcw icon
+      return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.69"/></svg>`;
+    }
+    if (l.indexOf("human") !== -1 || l.indexOf("agent") !== -1 || l.indexOf("talk") !== -1 || l.indexOf("person") !== -1) {
+      // User icon
+      return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
+    }
+    // Default: chat bubble
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`;
+  }
+
+  // ── Home view renderer ────────────────────────────────────────────────────
+  // Returns a DOM element with greeting bubble + card-style quick action buttons.
+  function renderHomeView() {
+    var home = document.createElement("div");
+    home.className = "sm-home";
+
+    // Greeting bubble
+    var greetRow = document.createElement("div");
+    greetRow.className = "sm-msg-row";
+    var greetBubble = document.createElement("div");
+    greetBubble.className = "sm-bubble bot";
+    greetBubble.innerHTML = formatReply(GREETING);
+    greetRow.appendChild(greetBubble);
+    home.appendChild(greetRow);
+
+    if (QUICK_REPLIES.length > 0) {
+      // "QUICK ACTIONS" label
+      var label = document.createElement("p");
+      label.className = "sm-quick-label";
+      label.textContent = "Quick Actions";
+      home.appendChild(label);
+
+      // Card buttons
+      var cards = document.createElement("div");
+      cards.className = "sm-actions";
+      QUICK_REPLIES.forEach(function(reply) {
+        var btn = document.createElement("button");
+        btn.className = "sm-action-card";
+        btn.innerHTML = `<div class="sm-action-icon">${getQuickReplyIcon(reply)}</div><span class="sm-action-label">${escHtml(reply)}</span>`;
+        btn.addEventListener("click", function() {
+          inputEl.value = reply;
+          sendMessage();
+        });
+        cards.appendChild(btn);
+      });
+      home.appendChild(cards);
+    }
+
+    return home;
   }
 
   // ── Revenue attribution — product click tracking ─────────────────────────
@@ -548,6 +677,7 @@
     messages.push({ role: "user", text: text });
     inputEl.value = "";
     isLoading = true;
+    homeVisible = false;   // exit home view on first message
     chipsVisible = false;  // hide chips permanently once user starts typing
     sendBtn.disabled = true;
     renderMessages();
