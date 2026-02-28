@@ -183,12 +183,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     update: { plan: newPlan, lastActiveAt: new Date() },
   });
 
-  // ── Redirect to setup if not completed ──
-  // After install, merchants should go through the onboarding wizard first
-  if (!settings.setupCompleted) {
-    return redirect("/app/setup");
-  }
-
   // ── KPI totals ──
   const totalChats = await prisma.conversation.count({ where: { shop } });
   const totalMessages = await prisma.message.count({
@@ -350,6 +344,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     plan: settings.plan as "free" | "pro",
     messageCount: settings.messageCount,
     freeLimit: FREE_LIMIT,
+    // Setup status
+    setupCompleted: settings.setupCompleted ?? false,
     // Review banner — only truthy when a trigger fires
     reviewTrigger: reviewTrigger as string | false,
     aiHandledChats: settings.aiHandledChats ?? 0,
@@ -785,6 +781,7 @@ export default function Dashboard() {
     plan,
     messageCount,
     freeLimit,
+    setupCompleted,
     reviewTrigger,
     aiHandledChats,
     totalRevenue,
@@ -822,6 +819,47 @@ export default function Dashboard() {
   return (
     <AdminLayout>
       <div className="space-y-6 max-w-6xl">
+
+      {/* ── Setup banner — show when setup not completed ── */}
+      {!setupCompleted && (
+        <div
+          style={{
+            background: "linear-gradient(135deg, #0ea5e9 0%, #06b6d4 100%)",
+            border: "1px solid #0284c7",
+            borderRadius: 10,
+            padding: "16px 18px",
+            display: "flex",
+            alignItems: "center",
+            gap: 16,
+            flexWrap: "wrap" as const,
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <p style={{ margin: 0, fontWeight: 600, fontSize: 14, color: "#fff" }}>
+              🚀 Complete Your Setup
+            </p>
+            <p style={{ margin: "4px 0 0", fontSize: 13, color: "rgba(255,255,255,0.9)" }}>
+              Customize your AI assistant's name, greeting, and quick actions in just 3 steps.
+            </p>
+          </div>
+          <button
+            onClick={() => navigate("/app/setup")}
+            style={{
+              padding: "8px 20px",
+              borderRadius: 8,
+              background: "#fff",
+              color: "#0284c7",
+              fontSize: 13,
+              fontWeight: 600,
+              border: "none",
+              cursor: "pointer",
+              whiteSpace: "nowrap" as const,
+            }}
+          >
+            Go to Setup →
+          </button>
+        </div>
+      )}
 
       {/* ── Review banner — only visible when a trigger fires ── */}
       {reviewTrigger && (
