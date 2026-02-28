@@ -379,7 +379,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   let products: ProductResult[] = [];
   let featureError: string | undefined;
 
-  if (!adminCtx) {
+  // ── Quick-action: "Recommend a product" button ────────────────────────────
+  // First click → skip product fetch, ask ONE clarifying question.
+  const isRecommendQuickAction = message.trim() === "Recommend a product";
+  // Follow-up → customer's reply is the search term; detect via last assistant msg.
+  const lastAssistantMsg = [...conv.messages].reverse().find((m) => m.role === "assistant");
+  const isRecommendFollowUp =
+    !isRecommendQuickAction &&
+    !!lastAssistantMsg?.content?.includes("What are you looking for");
+
+  if (isRecommendQuickAction) {
+    // Focused system prompt handles this — no product fetch needed yet.
+  } else if (!adminCtx) {
     // No offline session token — order/product GraphQL calls are impossible.
     // Set a sentinel so the AI context handler below gives a sensible reply.
     console.warn("[appProxy] adminCtx is missing — order/product features disabled.");
@@ -410,9 +421,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       extraContext = "NEED_ORDER_NUMBER: Customer asked about order tracking but did not provide an order number. Ask them for their order number (e.g. #1234).";
       console.log("[appProxy] Order tracking intent — no order number found in message");
     }
-  } else if (isProductRecommendationIntent(message)) {
-    const productQuery = extractProductQuery(message);
-    console.log("[appProxy] Product recommendation intent — query:", productQuery);
+  } else if (isRecommendFollowUp || isProductRecommendationIntent(message)) {
+    // For follow-ups to "What are you looking for?", use the raw reply as the query.
+    const productQuery = isRecommendFollowUp ? message.trim() : extractProductQuery(message);
+    console.log("[appProxy] Product recommendation intent — query:", productQuery, "| followUp:", isRecommendFollowUp);
     const result = await fetchProductsForShop(shop, productQuery);
     extraContext = result.context;
     products = result.products as ProductResult[];
@@ -473,15 +485,17 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     extraContextForAI = extraContext;
   }
 
-  const systemPrompt = [
-    `You are ShopMate, a helpful AI assistant for the Shopify store ${shop}. Help customers with order tracking, product recommendations, returns, and general questions. Be friendly, concise, and helpful.`,
-    kbContext,
-    `\n── PRODUCT INFORMATION ──\nWhen product information is provided below, use it directly to answer customer questions about products. Do NOT tell customers you don't have access to the catalog — you have what's listed below.`,
-    extraContextForAI ? `\nLIVE ORDER/PRODUCT CONTEXT:\n${extraContextForAI}` : "\nNo product information is currently available.",
-    products.length > 0 ? "\n\nPresent product cards after your reply. Briefly introduce them." : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const systemPrompt = isRecommendQuickAction
+    ? `You are ShopMate, a helpful AI assistant. The customer wants product recommendations. Ask them ONE short question: "What are you looking for? I can help you find the right product." Do not ask about budget, who it is for, or anything else. Keep it brief and friendly.`
+    : [
+        `You are ShopMate, a helpful AI assistant for the Shopify store ${shop}. Help customers with order tracking, product recommendations, returns, and general questions. Be friendly, concise, and helpful.`,
+        kbContext,
+        `\n── PRODUCT INFORMATION ──\nWhen product information is provided below, use it directly to answer customer questions about products. Do NOT tell customers you don't have access to the catalog — you have what's listed below.`,
+        extraContextForAI ? `\nLIVE ORDER/PRODUCT CONTEXT:\n${extraContextForAI}` : "\nNo product information is currently available.",
+        products.length > 0 ? "\n\nPresent product cards after your reply. Briefly introduce them." : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
 
   console.log('[appProxy] extraContext:', extraContext?.slice(0, 300));
   console.log('[appProxy] extraContextForAI:', extraContextForAI?.slice(0, 300));
