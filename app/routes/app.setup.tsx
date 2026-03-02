@@ -419,8 +419,8 @@ export default function SetupWizard() {
                     </div>
                   </div>
 
-                  {/* Widget overlay */}
-                  <div style={{ position: "absolute", inset: 0 }}>
+                  {/* Widget overlay — docked at bottom */}
+                  <div style={{ position: "absolute", bottom: 0, left: 0, right: 0 }}>
                     <ChatWidget shop={loaderData.shop} />
                   </div>
                 </div>
