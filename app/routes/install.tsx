@@ -7,7 +7,7 @@ export const links: LinksFunction = () => [
   {
     rel: "stylesheet",
     href:
-      "https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800;900&family=DM+Sans:wght@300;400;500;600&display=swap",
+      "https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap",
   },
 ];
 
@@ -172,11 +172,11 @@ const css = `
 
   .sm-h1{
     font-family: 'Syne', sans-serif;
-    font-weight: 800;
-    letter-spacing: -0.03em;
-    margin: 0 0 16px 0;
-    font-size: clamp(2.4rem, 4.2vw, 3.6rem);
-    line-height: 1.04;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin: 0 0 20px 0;
+    font-size: clamp(2.2rem, 4vw, 3.2rem);
+    line-height: 1.1;
     max-width: 720px;
   }
   .sm-h1 em{ color: var(--green); font-style: normal; }
@@ -352,10 +352,10 @@ const css = `
   }
   .sm-h2{
     font-family:'Syne',sans-serif;
-    font-weight: 800;
-    letter-spacing: -0.03em;
-    font-size: clamp(1.8rem, 3.2vw, 2.6rem);
-    line-height: 1.12;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    font-size: clamp(1.7rem, 3vw, 2.4rem);
+    line-height: 1.15;
     margin: 0 0 40px 0;
     max-width: 720px;
   }
@@ -422,7 +422,7 @@ const css = `
   .sm-price h3{
     margin: 0 0 6px 0;
     font-family:'Syne',sans-serif;
-    font-weight: 900;
+    font-weight: 800;
     letter-spacing: -0.02em;
   }
   .sm-price .tag{
@@ -438,7 +438,7 @@ const css = `
   }
   .sm-price .amt{
     font-family:'Syne',sans-serif;
-    font-weight: 900;
+    font-weight: 800;
     font-size: 2.2rem;
     letter-spacing: -0.03em;
     margin: 10px 0 8px;
@@ -452,7 +452,7 @@ const css = `
     display:flex; align-items:center; justify-content:center;
     color: var(--green-dark);
     flex: 0 0 auto;
-    font-weight: 900;
+    font-weight: 800;
     margin-top: 2px;
   }
 
@@ -525,7 +525,7 @@ const css = `
     border-radius: 14px;
     padding: 14px 18px;
     font-family:'Syne',sans-serif;
-    font-weight: 900;
+    font-weight: 800;
     font-size: 1.05rem;
     display:flex; align-items:center; justify-content:center; gap: 10px;
     transition: transform .15s, background .15s, box-shadow .15s;
