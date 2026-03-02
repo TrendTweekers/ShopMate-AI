@@ -1,9 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 // ─── Public install landing page — NO Shopify auth required ──────────────────
 export default function InstallPage() {
   const [store, setStore] = useState("");
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    window.umami?.track("install_page_view");
+  }, []);
 
   function handleInstall() {
     const slug = store.trim().replace(/\.myshopify\.com\s*$/i, "").trim();
@@ -16,6 +20,7 @@ export default function InstallPage() {
       return;
     }
     setError("");
+    window.umami?.track("install_button_click", { shop: slug });
     const shop = `${slug}.myshopify.com`;
     const clientId = "9b1e966350cee0ffb9d2b6f46719da03";
     const scopes = "write_products,read_orders";
@@ -211,6 +216,23 @@ export default function InstallPage() {
         {" & "}
         <a href="#" style={{ color: "#008060", textDecoration: "none" }}>Privacy Policy</a>
       </p>
+
+      {/* Dashboard preview */}
+      <div style={{ marginTop: 48, width: "100%", maxWidth: 860, textAlign: "center" }}>
+        <p style={{ fontSize: 13, fontWeight: 600, color: "#6b7280", marginBottom: 16, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+          What you'll get
+        </p>
+        <img
+          src="/assets/dashboard.JPG"
+          alt="ShopMate AI dashboard preview"
+          style={{
+            width: "100%",
+            borderRadius: 16,
+            boxShadow: "0 8px 48px rgba(0,0,0,0.14)",
+            border: "1px solid #e5e7eb",
+          }}
+        />
+      </div>
     </div>
   );
 }
