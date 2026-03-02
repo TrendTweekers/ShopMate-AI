@@ -569,19 +569,25 @@ const css = `
 
 export default function InstallPage() {
   const [shop, setShop] = useState("");
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   function handleInstall() {
     const slug = shop.trim().replace(/\.myshopify\.com.*$/i, "").trim();
+
+    // Validate: must be non-empty and only alphanumeric + hyphens
     if (!slug) {
-      setError(true);
-      setTimeout(() => setError(false), 1500);
+      setError("Please enter your store name (e.g. my-store)");
       return;
     }
+    if (!/^[a-zA-Z0-9-]+$/.test(slug)) {
+      setError("Please enter only your store name (e.g. my-store, not my-store.myshopify.com)");
+      return;
+    }
+
     const clientId = "9b1e966350cee0ffb9d2b6f46719da03";
     const scopes = "read_products,read_orders,read_customers,write_script_tags";
     const redirectUri = "https://shopmate-ai-helper-production.up.railway.app/auth/callback";
-    const shopifyAuthUrl = `https://${slug}.myshopify.com/admin/oauth/authorize?client_id=${clientId}&scope=${encodeURIComponent(scopes)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+    const shopifyAuthUrl = `https://admin.shopify.com/store/${slug}/oauth/authorize?client_id=${clientId}&scope=${encodeURIComponent(scopes)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
     window.location.href = shopifyAuthUrl;
   }
 
@@ -844,12 +850,18 @@ export default function InstallPage() {
                     value={shop}
                     onChange={(e) => {
                       setShop(e.target.value);
-                      setError(false);
+                      setError(null);
                     }}
                     onKeyDown={(e) => e.key === "Enter" && handleInstall()}
                   />
                   <div className="sm-suffix">.myshopify.com</div>
                 </div>
+
+                {error ? (
+                  <div className="sm-note" style={{ color: "#fecaca", marginTop: 10 }}>
+                    {error}
+                  </div>
+                ) : null}
 
                 <button className="sm-install-btn" onClick={handleInstall}>
                   Install ShopMate AI
