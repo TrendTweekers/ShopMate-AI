@@ -571,11 +571,6 @@ export default function InstallPage() {
   const [shop, setShop] = useState("");
   const [error, setError] = useState(false);
 
-  const installBase = useMemo(
-    () => "https://shopmate-ai-helper-production.up.railway.app/auth",
-    [],
-  );
-
   function handleInstall() {
     const slug = shop.trim().replace(/\.myshopify\.com.*$/i, "").trim();
     if (!slug) {
@@ -583,7 +578,11 @@ export default function InstallPage() {
       setTimeout(() => setError(false), 1500);
       return;
     }
-    window.location.href = `${installBase}?shop=${slug}.myshopify.com`;
+    const clientId = "9b1e966350cee0ffb9d2b6f46719da03";
+    const scopes = "read_products,read_orders,read_customers,write_script_tags";
+    const redirectUri = "https://shopmate-ai-helper-production.up.railway.app/auth/callback";
+    const shopifyAuthUrl = `https://${slug}.myshopify.com/admin/oauth/authorize?client_id=${clientId}&scope=${encodeURIComponent(scopes)}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+    window.location.href = shopifyAuthUrl;
   }
 
   return (
