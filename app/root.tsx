@@ -35,6 +35,13 @@ export default function App() {
           the checker crawls static HTML so it must be in the server response.
         */}
         <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js" />
+        {process.env.NODE_ENV === "production" && (
+          <script
+            defer
+            src="https://cloud.umami.is/script.js"
+            data-website-id="52ec92de-ac98-4b26-837b-ccb9af054036"
+          />
+        )}
       </head>
       <body>
         <Outlet />

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import type { LinksFunction } from "@remix-run/node";
 
 export const links: LinksFunction = () => [
@@ -571,6 +571,10 @@ export default function InstallPage() {
   const [shop, setShop] = useState("");
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    window.umami?.track("install_page_view");
+  }, []);
+
   function handleInstall() {
     const slug = shop.trim().replace(/\.myshopify\.com.*$/i, "").trim();
 
@@ -583,7 +587,7 @@ export default function InstallPage() {
       setError("Please enter only your store name (e.g. my-store, not my-store.myshopify.com)");
       return;
     }
-
+    window.umami?.track("install_button_click", { shop: slug });
     const clientId = "9b1e966350cee0ffb9d2b6f46719da03";
     const scopes = "read_products,read_orders,read_customers,write_script_tags";
     const redirectUri = "https://shopmate-ai-helper-production.up.railway.app/auth/callback";
@@ -771,6 +775,28 @@ export default function InstallPage() {
                 </div>
               ))}
             </div>
+          </div>
+        </section>
+
+        {/* Dashboard preview section */}
+        <section className="sm-section">
+          <div className="sm-container">
+            <div className="sm-kicker">Dashboard</div>
+            <h2 className="sm-h2">See exactly what's working</h2>
+            <p style={{ textAlign: "center", color: "var(--muted)", marginBottom: "2.5rem", fontSize: "1.05rem" }}>
+              Track chats, deflection rate, and revenue from AI recommendations — all in one place.
+            </p>
+            <img
+              src="/assets/dashboard.JPG"
+              alt="ShopMate AI dashboard showing chat volume, revenue from recommendations, and recent conversations"
+              style={{
+                width: "100%",
+                borderRadius: 16,
+                boxShadow: "0 12px 60px rgba(0,0,0,0.12)",
+                border: "1px solid rgba(0,0,0,0.07)",
+                display: "block",
+              }}
+            />
           </div>
         </section>
 

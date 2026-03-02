@@ -55,6 +55,14 @@ interface FeedbackEntry {
   replied: boolean;
 }
 
+interface UmamiStats {
+  available: boolean;
+  pageviews: number;
+  visitors: number;
+  visits: number;
+  events: Array<{ name: string; count: number }>;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
 function calculateDaysInactive(lastActiveAt: Date | null): number {
@@ -211,7 +219,41 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     replied: f.replied,
   }));
 
-  return { stores, globalStats, feedback };
+  // ── Umami analytics ──────────────────────────────────────────────────────
+  const UMAMI_WEBSITE_ID = "52ec92de-ac98-4b26-837b-ccb9af054036";
+  const umamiApiKey = process.env.UMAMI_API_KEY;
+  let umamiStats: UmamiStats = { available: false, pageviews: 0, visitors: 0, visits: 0, events: [] };
+
+  if (umamiApiKey) {
+    const endAt = Date.now();
+    const startAt = endAt - 30 * 24 * 60 * 60 * 1000; // last 30 days
+    const headers = { Authorization: `Bearer ${umamiApiKey}` };
+    try {
+      const [statsRes, eventsRes] = await Promise.all([
+        fetch(`https://cloud.umami.is/api/websites/${UMAMI_WEBSITE_ID}/stats?startAt=${startAt}&endAt=${endAt}`, { headers }),
+        fetch(`https://cloud.umami.is/api/websites/${UMAMI_WEBSITE_ID}/metrics?startAt=${startAt}&endAt=${endAt}&type=event`, { headers }),
+      ]);
+      if (statsRes.ok && eventsRes.ok) {
+        const statsData = await statsRes.json();
+        const eventsData: Array<{ x: string; y: number }> = await eventsRes.json();
+        umamiStats = {
+          available: true,
+          pageviews: statsData.pageviews?.value ?? 0,
+          visitors: statsData.visitors?.value ?? 0,
+          visits: statsData.visits?.value ?? 0,
+          events: eventsData
+            .map((e) => ({ name: e.x, count: e.y }))
+            .sort((a, b) => b.count - a.count),
+        };
+      } else {
+        console.warn(`[internal-admin] Umami API error: stats=${statsRes.status} events=${eventsRes.status}`);
+      }
+    } catch (err) {
+      console.error("[internal-admin] Failed to fetch Umami stats:", err);
+    }
+  }
+
+  return { stores, globalStats, feedback, umamiStats };
 };
 
 // ─── Action ───────────────────────────────────────────────────────────────
@@ -341,14 +383,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 // ─── Component ────────────────────────────────────────────────────────────
 
 export default function InternalAdminDashboard() {
-  const { stores, globalStats, feedback } = useLoaderData<typeof loader>();
+  const { stores, globalStats, feedback, umamiStats } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [expandedStore, setExpandedStore] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<"domain" | "plan" | "health" | "revenue" | "activity">(
     "activity",
   );
-  const [activeTab, setActiveTab] = useState<"stores" | "feedback">("stores");
+  const [activeTab, setActiveTab] = useState<"stores" | "feedback" | "analytics">("stores");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const filteredStores = stores
@@ -455,6 +497,19 @@ export default function InternalAdminDashboard() {
               >
                 Feedback ({feedback.length})
               </button>
+              <button
+                onClick={() => {
+                  setActiveTab("analytics");
+                  setMobileMenuOpen(false);
+                }}
+                className={`px-3 sm:px-4 py-3 font-medium text-sm sm:text-base border-b-2 transition whitespace-nowrap ${
+                  activeTab === "analytics"
+                    ? "border-blue-500 text-white"
+                    : "border-transparent text-slate-400 hover:text-slate-300"
+                }`}
+              >
+                Analytics
+              </button>
             </div>
           </div>
 
@@ -511,6 +566,101 @@ export default function InternalAdminDashboard() {
 
           {/* Feedback Tab */}
           {activeTab === "feedback" && <FeedbackInbox entries={feedback} />}
+
+          {/* Analytics Tab */}
+          {activeTab === "analytics" && (
+            <div>
+              {!umamiStats.available ? (
+                <div className="bg-slate-800 rounded-lg border border-slate-700 p-8 text-center">
+                  <Activity className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+                  <p className="text-white font-semibold mb-1">Umami API key not configured</p>
+                  <p className="text-slate-400 text-sm">
+                    Add <code className="bg-slate-700 px-1.5 py-0.5 rounded text-xs">UMAMI_API_KEY</code> to your Railway environment variables to see live analytics here.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Last 30 days header */}
+                  <p className="text-slate-400 text-sm">Last 30 days · website ID {" "}
+                    <code className="bg-slate-800 px-1.5 py-0.5 rounded text-xs text-slate-300">52ec92de</code>
+                  </p>
+
+                  {/* Top stat cards */}
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 text-center">
+                      <div className="text-2xl font-bold text-white">{umamiStats.pageviews.toLocaleString()}</div>
+                      <div className="text-xs text-slate-400 mt-1">Page Views</div>
+                    </div>
+                    <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 text-center">
+                      <div className="text-2xl font-bold text-white">{umamiStats.visitors.toLocaleString()}</div>
+                      <div className="text-xs text-slate-400 mt-1">Unique Visitors</div>
+                    </div>
+                    <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 text-center">
+                      <div className="text-2xl font-bold text-white">{umamiStats.visits.toLocaleString()}</div>
+                      <div className="text-xs text-slate-400 mt-1">Sessions</div>
+                    </div>
+                  </div>
+
+                  {/* Install funnel */}
+                  {(() => {
+                    const views = umamiStats.events.find((e) => e.name === "install_page_view")?.count ?? 0;
+                    const clicks = umamiStats.events.find((e) => e.name === "install_button_click")?.count ?? 0;
+                    const convRate = views > 0 ? Math.round((clicks / views) * 100) : 0;
+                    return (
+                      <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
+                        <h3 className="text-white font-semibold text-sm mb-3">Install Funnel</h3>
+                        <div className="grid grid-cols-3 gap-4 text-center">
+                          <div>
+                            <div className="text-xl font-bold text-blue-400">{views.toLocaleString()}</div>
+                            <div className="text-xs text-slate-400 mt-1">Page Views</div>
+                          </div>
+                          <div>
+                            <div className="text-xl font-bold text-green-400">{clicks.toLocaleString()}</div>
+                            <div className="text-xs text-slate-400 mt-1">Install Clicks</div>
+                          </div>
+                          <div>
+                            <div className="text-xl font-bold text-purple-400">{convRate}%</div>
+                            <div className="text-xs text-slate-400 mt-1">Conversion</div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* All events table */}
+                  <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
+                    <div className="px-4 py-3 border-b border-slate-700">
+                      <h3 className="text-white font-semibold text-sm">Custom Events</h3>
+                    </div>
+                    {umamiStats.events.length === 0 ? (
+                      <div className="p-6 text-center text-slate-400 text-sm">No events recorded yet</div>
+                    ) : (
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-slate-400 text-xs border-b border-slate-700">
+                            <th className="px-4 py-2 font-medium">Event</th>
+                            <th className="px-4 py-2 font-medium text-right">Count</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {umamiStats.events.map((ev, i) => (
+                            <tr key={ev.name} className={`border-b border-slate-700/50 ${i % 2 === 0 ? "" : "bg-slate-700/20"}`}>
+                              <td className="px-4 py-2.5 text-white font-mono text-xs">{ev.name}</td>
+                              <td className="px-4 py-2.5 text-right">
+                                <span className="bg-blue-900 text-blue-300 text-xs font-semibold px-2 py-0.5 rounded-full">
+                                  {ev.count.toLocaleString()}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -735,6 +885,7 @@ function StoreDetailPanel({ store }: StoreDetailPanelProps) {
   };
 
   const handleExtendTrial = async () => {
+    window.umami?.track("trial_extended", { shop: store.shop });
     const formData = new FormData();
     formData.append("_action", "extend-trial");
     formData.append("shopId", store.id);
@@ -742,6 +893,7 @@ function StoreDetailPanel({ store }: StoreDetailPanelProps) {
   };
 
   const handleToggleWidget = async () => {
+    window.umami?.track(store.widgetEnabled ? "widget_disabled" : "widget_enabled", { shop: store.shop });
     const formData = new FormData();
     formData.append("_action", "toggle-widget");
     formData.append("shopId", store.id);

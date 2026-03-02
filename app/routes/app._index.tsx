@@ -732,6 +732,7 @@ function FeedbackModal({ onClose, feedbackSuccess }: { onClose: () => void; feed
                   e.preventDefault();
                   return;
                 }
+                window.umami?.track("feedback_submitted");
                 console.log("[feedback-modal] Submit button clicked, form will submit normally");
               }}
               style={{

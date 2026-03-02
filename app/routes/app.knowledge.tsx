@@ -407,7 +407,7 @@ export default function KnowledgePage() {
                   />
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button type="submit" disabled={isSubmitting} style={{ flex: 1, padding: "8px", borderRadius: 8, background: "#008060", color: "#fff", border: "none", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                  <button type="submit" disabled={isSubmitting} onClick={() => window.umami?.track("knowledge_base_item_added")} style={{ flex: 1, padding: "8px", borderRadius: 8, background: "#008060", color: "#fff", border: "none", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
                     {isSubmitting ? "Saving…" : "Save Entry"}
                   </button>
                   <button type="button" onClick={() => setShowAddForm(false)} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #d1d5db", background: "#fff", fontSize: 13, cursor: "pointer", color: "#374151" }}>
