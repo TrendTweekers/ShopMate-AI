@@ -86,7 +86,7 @@ const css = `
   .sm-hero-inner {
     position: relative; z-index: 1;
     max-width: 1100px; width: 100%;
-    display: grid; grid-template-columns: 1fr 1fr; gap: 80px; align-items: center;
+    display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 48px; align-items: center;
   }
   .sm-hero-badge {
     display: inline-flex; align-items: center; gap: 8px;
@@ -100,7 +100,7 @@ const css = `
 
   .sm-h1 {
     font-family: 'Syne', sans-serif; font-weight: 800;
-    font-size: clamp(2.4rem, 4vw, 3.4rem); line-height: 1.1;
+    font-size: clamp(2rem, 3.5vw, 3rem); line-height: 1.1;
     letter-spacing: -0.02em; margin-bottom: 20px;
   }
   .sm-h1 em { color: var(--green); font-style: normal; }
@@ -132,6 +132,7 @@ const css = `
     box-shadow: 0 25px 80px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.06);
     overflow: hidden;
     animation: sm-float 4s ease-in-out infinite;
+    max-width: 320px; margin-left: auto;
   }
   @keyframes sm-float { 0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)} }
 
