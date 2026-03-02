@@ -227,7 +227,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   if (umamiApiKey) {
     const endAt = Date.now();
     const startAt = endAt - 30 * 24 * 60 * 60 * 1000; // last 30 days
-    const headers = { Authorization: `Bearer ${umamiApiKey}` };
+    const headers = { "x-umami-api-key": umamiApiKey };
     try {
       const [statsRes, eventsRes] = await Promise.all([
         fetch(`https://cloud.umami.is/api/websites/${UMAMI_WEBSITE_ID}/stats?startAt=${startAt}&endAt=${endAt}`, { headers }),
