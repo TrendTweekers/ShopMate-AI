@@ -36,20 +36,26 @@ export async function fetchProductsForShop(
 
   try {
     // Step 1: Look up the offline access token from the Session table
+    // Try to find offline session first, then fall back to any valid session
     const session = await prisma.session.findFirst({
       where: { shop: shopDomain, isOnline: false },
     });
 
-    if (!session?.accessToken) {
-      console.warn("[products.server] No offline session token found for shop:", shopDomain);
+    // If no offline session, try any session with an access token
+    const finalSession = session || await prisma.session.findFirst({
+      where: { shop: shopDomain, accessToken: { not: null } },
+    });
+
+    if (!finalSession?.accessToken) {
+      console.warn("[products.server] No session token found for shop:", shopDomain);
       return {
-        context: `PRODUCT_ACCESS_ERROR: No offline session token found — app needs reinstall`,
+        context: `PRODUCT_ACCESS_ERROR: No session token found — app needs reinstall`,
         products: [],
-        error: "no_offline_token",
+        error: "no_token",
       };
     }
 
-    console.log("[products.server] Found offline session token for shop:", shopDomain);
+    console.log("[products.server] Found session token for shop:", shopDomain, "isOnline:", finalSession.isOnline ?? "unknown");
 
     // Step 2: Use the access token to call Shopify Admin API directly
     // Build the products query — only include query parameter if provided
@@ -63,7 +69,7 @@ export async function fetchProductsForShop(
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Shopify-Access-Token": session.accessToken,
+          "X-Shopify-Access-Token": finalSession.accessToken,
         },
         body: JSON.stringify({
           query: `{
