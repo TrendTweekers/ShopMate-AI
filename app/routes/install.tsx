@@ -731,7 +731,7 @@ export default function InstallPage() {
                 {
                   icon: "📦",
                   title: "Order tracking",
-                  desc: "Customers ask "where's my order?" and get instant answers. No more manual lookups.",
+                  desc: 'Customers ask "where\'s my order?" and get instant answers. No more manual lookups.',
                 },
                 {
                   icon: "✨",
