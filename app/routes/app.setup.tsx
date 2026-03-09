@@ -161,7 +161,10 @@ export default function SetupWizard() {
               target="_top"
               className="polaris-card animate-fade-in"
               key={currentStep}
-              onSubmit={() => setIsSubmitting(true)}
+              onSubmit={(e) => {
+                setIsSubmitting(true);
+                // Allow default form submission to proceed
+              }}
             >
               {/* Preserve Shopify host param */}
               <input type="hidden" name="host" value={host} />
@@ -277,37 +280,37 @@ export default function SetupWizard() {
                   </p>
                 </div>
               )}
-            </form>
 
-            {/* Navigation */}
-            <div className="flex justify-between gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setCurrentStep(Math.max(0, currentStep - 1))}
-                disabled={currentStep === 0 || isSubmitting}
-              >
-                <ArrowLeft className="w-4 h-4 mr-1" /> Back
-              </Button>
-              <button
-                type="submit"
-                disabled={
-                  isSubmitting ||
-                  (currentStep === 0 && (!botName.trim() || !greeting.trim())) ||
-                  (currentStep === 1 && quickActions.length === 0)
-                }
-                className="px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-              >
-                {currentStep === 2
-                  ? isSubmitting
-                    ? "Completing…"
-                    : "Go to Dashboard"
-                  : isSubmitting
-                  ? "Saving…"
-                  : "Next"}
-                {currentStep < 2 && <ArrowRight className="w-4 h-4" />}
-              </button>
-            </div>
+              {/* Navigation - INSIDE FORM so submit button works */}
+              <div className="flex justify-between gap-2 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep(Math.max(0, currentStep - 1))}
+                  disabled={currentStep === 0}
+                  className="px-4 py-2 border border-border text-foreground hover:bg-muted rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                >
+                  <ArrowLeft className="w-4 h-4 mr-1" /> Back
+                </button>
+                <button
+                  type="submit"
+                  disabled={
+                    isSubmitting ||
+                    (currentStep === 0 && (!botName.trim() || !greeting.trim())) ||
+                    (currentStep === 1 && quickActions.length === 0)
+                  }
+                  className="px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                >
+                  {currentStep === 2
+                    ? isSubmitting
+                      ? "Completing…"
+                      : "Go to Dashboard"
+                    : isSubmitting
+                    ? "Saving…"
+                    : "Next"}
+                  {currentStep < 2 && <ArrowRight className="w-4 h-4" />}
+                </button>
+              </div>
+            </form>
           </div>
 
           {/* Right: Live Widget Preview (35%) - Fixed Sidebar */}
