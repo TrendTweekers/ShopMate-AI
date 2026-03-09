@@ -3,10 +3,11 @@ import { redirect } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "~/db.server";
 
-// Helper to build redirect URL with Shopify context
-function buildRedirectUrl(basePath: string, params: string, host?: string): string {
+// Helper to build redirect URL with Shopify context (host + id_token for session preservation)
+function buildRedirectUrl(basePath: string, params: string, host?: string, idToken?: string): string {
   const hostParam = host ? `&host=${encodeURIComponent(host)}` : "";
-  return `${basePath}?${params}${hostParam}`;
+  const idTokenParam = idToken ? `&id_token=${encodeURIComponent(idToken)}` : "";
+  return `${basePath}?${params}${hostParam}${idTokenParam}`;
 }
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -17,13 +18,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   try {
     const formData = await request.formData();
     const step = formData.get("step") as string;
+    const url = new URL(request.url);
 
     // Get host from multiple sources (form data or URL query params)
     let host = formData.get("host") as string;
     if (!host) {
       // Fallback to URL query params (in case hidden input wasn't sent)
-      const url = new URL(request.url);
       host = url.searchParams.get("host") || "";
+    }
+
+    // Get id_token from URL to preserve Shopify session context through redirects
+    const idToken = url.searchParams.get("id_token") || "";
+    if (idToken) {
+      console.log(`[app.setup.save] Captured id_token from request URL for redirect preservation`);
     }
 
     // Get shop identifier from auth or host param fallback
@@ -81,8 +88,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         create: { shop, botName, greeting, tone, lastActiveAt: new Date() },
       });
 
-      console.log(`[app.setup.save] Step 1 saved, redirecting back to setup with host`);
-      return redirect(buildRedirectUrl("/app/setup", "saved=1", host));
+      console.log(`[app.setup.save] Step 1 saved, redirecting back to setup with host & id_token`);
+      return redirect(buildRedirectUrl("/app/setup", "saved=1", host, idToken));
     }
 
     if (step === "2") {
@@ -101,8 +108,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         create: { shop, quickActions, lastActiveAt: new Date() },
       });
 
-      console.log(`[app.setup.save] Step 2 saved, redirecting back to setup with host`);
-      return redirect(buildRedirectUrl("/app/setup", "saved=2", host));
+      console.log(`[app.setup.save] Step 2 saved, redirecting back to setup with host & id_token`);
+      return redirect(buildRedirectUrl("/app/setup", "saved=2", host, idToken));
     }
 
     if (step === "3") {
@@ -114,12 +121,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         create: { shop, setupCompleted: true, lastActiveAt: new Date() },
       });
 
-      console.log(`[app.setup.save] Setup completed, redirecting to dashboard with host`);
-      // Redirect to dashboard with Shopify context
-      return redirect(host ? `/app?host=${encodeURIComponent(host)}` : "/app");
+      console.log(`[app.setup.save] Setup completed, redirecting to dashboard with host & id_token`);
+      // Redirect to dashboard with Shopify context (preserve session)
+      const dashboardUrl = new URL("/app", new URL(request.url).origin);
+      if (host) dashboardUrl.searchParams.set("host", host);
+      if (idToken) dashboardUrl.searchParams.set("id_token", idToken);
+      return redirect(dashboardUrl.toString());
     }
 
-    return redirect(buildRedirectUrl("/app/setup", "error=unknown_step", host));
+    return redirect(buildRedirectUrl("/app/setup", "error=unknown_step", host, idToken));
   } catch (err) {
     console.error(`[app.setup.save] Error saving setup:`, err);
     return redirect("/app/setup?error=save_failed");
