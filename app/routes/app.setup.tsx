@@ -157,7 +157,7 @@ export default function SetupWizard() {
             {/* Step Content */}
             <form
               method="POST"
-              action="/app/setup.save"
+              action="/app/setup/save"
               target="_top"
               className="polaris-card animate-fade-in"
               key={currentStep}
