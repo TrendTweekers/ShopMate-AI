@@ -26,48 +26,45 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       host = url.searchParams.get("host") || "";
     }
 
-    // Decode host if it's base64 encoded (Shopify may encode the admin URL)
+    // Get shop identifier from auth or host param fallback
     let shop: string = "";
-    if (host) {
-      try {
-        // Try to decode as base64
-        const decoded = Buffer.from(host, "base64").toString("utf-8");
-        // If decoded contains "admin.shopify.com/store/", extract the store name
-        if (decoded.includes("admin.shopify.com/store/")) {
-          const storeName = decoded.split("admin.shopify.com/store/")[1];
-          shop = `${storeName}.myshopify.com`;
-          console.log(`[app.setup.save] Decoded host from base64: ${storeName}.myshopify.com`);
-        } else {
-          // Not admin URL, use host as-is (might already be shop domain)
-          shop = host;
-          console.log(`[app.setup.save] Using host directly: ${shop}`);
-        }
-      } catch {
-        // Not base64 or couldn't decode, use as-is
-        shop = host;
-        console.log(`[app.setup.save] Using host as-is (not base64): ${shop}`);
-      }
-    }
+    let authSource = "none";
 
-    // If we don't have a shop from host param, try standard auth
-    if (!shop) {
-      try {
-        const { session } = await authenticate.admin(request);
-        shop = session.shop;
-        console.log(`[app.setup.save] Auth succeeded for shop: ${shop}`);
-      } catch (authError) {
-        // No auth and no host param
-        console.log(`[app.setup.save] Auth failed and no host param - redirecting to login`);
-        return redirect("/auth/login");
+    // Try standard auth first
+    try {
+      const { session } = await authenticate.admin(request);
+      shop = session.shop;
+      authSource = "auth";
+      console.log(`[app.setup.save] Auth source: ${authSource} → ${shop}`);
+    } catch (authError) {
+      // Auth failed, try fallback with host param
+      if (host) {
+        try {
+          // Try to decode as base64
+          const decoded = Buffer.from(host, "base64").toString("utf-8");
+          // If decoded contains "admin.shopify.com/store/", extract the store name
+          if (decoded.includes("admin.shopify.com/store/")) {
+            const storeName = decoded.split("admin.shopify.com/store/")[1];
+            shop = `${storeName}.myshopify.com`;
+            authSource = "base64_host";
+            console.log(`[app.setup.save] Auth source: ${authSource} → ${shop}`);
+          } else {
+            // Not admin URL, use host as-is
+            shop = host;
+            authSource = "raw_host";
+            console.log(`[app.setup.save] Auth source: ${authSource} → ${shop}`);
+          }
+        } catch {
+          // Not base64 or couldn't decode, use as-is
+          shop = host;
+          authSource = "raw_host";
+          console.log(`[app.setup.save] Auth source: ${authSource} (not base64) → ${shop}`);
+        }
       }
-    } else {
-      // We have shop from host param, but try auth anyway for better context
-      try {
-        const { session } = await authenticate.admin(request);
-        console.log(`[app.setup.save] Auth succeeded for shop: ${session.shop}`);
-      } catch (authError) {
-        // Auth failed but we have shop from host, so continue
-        console.log(`[app.setup.save] Auth failed but using shop from host: ${shop}`);
+
+      if (!shop) {
+        console.log(`[app.setup.save] Failed: No shop found (auth failed + no host), redirecting to login`);
+        return redirect("/auth/login");
       }
     }
 
