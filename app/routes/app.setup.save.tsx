@@ -3,22 +3,24 @@ import { redirect } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "~/db.server";
 
+// Helper to build redirect URL with Shopify context
+function buildRedirectUrl(basePath: string, params: string, host?: string): string {
+  const hostParam = host ? `&host=${encodeURIComponent(host)}` : "";
+  return `${basePath}?${params}${hostParam}`;
+}
+
 export const action = async ({ request }: ActionFunctionArgs) => {
+  if (request.method !== "POST") {
+    return redirect("/app/setup?error=invalid_method");
+  }
+
   try {
     const { session } = await authenticate.admin(request);
     const shop = session.shop;
 
-    if (request.method !== "POST") {
-      return redirect("/app/setup?error=invalid_method");
-    }
-
     const formData = await request.formData();
     const step = formData.get("step") as string;
     const host = formData.get("host") as string;
-
-    // Build query string with Shopify context
-    const hostParam = host ? `&host=${encodeURIComponent(host)}` : "";
-    const successParams = (q: string) => `/app/setup?${q}${hostParam}`;
 
     if (step === "1") {
       // ── Step 1: Save bot name, greeting, tone ──
@@ -31,7 +33,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         data: { botName, greeting, tone },
       });
 
-      return redirect(successParams("step=1&success=true"));
+      return redirect(buildRedirectUrl("/app/setup", "step=1&success=true", host));
     }
 
     if (step === "2") {
@@ -40,7 +42,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const quickActions = quickActionsStr ? JSON.parse(quickActionsStr) : [];
 
       if (quickActions.length === 0) {
-        return redirect(successParams("error=no_actions"));
+        return redirect(buildRedirectUrl("/app/setup", "error=no_actions", host));
       }
 
       await prisma.shopSettings.update({
@@ -48,7 +50,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         data: { quickActions },
       });
 
-      return redirect(successParams("step=2&success=true"));
+      return redirect(buildRedirectUrl("/app/setup", "step=2&success=true", host));
     }
 
     if (step === "3") {
@@ -62,9 +64,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return redirect(host ? `/app?host=${encodeURIComponent(host)}` : "/app");
     }
 
-    return redirect(successParams("error=unknown_step"));
+    return redirect(buildRedirectUrl("/app/setup", "error=unknown_step", host));
   } catch (err) {
     console.error(`[app.setup.save] Error saving setup:`, err);
-    return redirect(successParams("error=save_failed"));
+    return redirect("/app/setup?error=save_failed");
   }
 };
