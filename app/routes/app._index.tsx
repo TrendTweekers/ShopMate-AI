@@ -794,6 +794,8 @@ export default function Dashboard() {
 
   const navigate = useNavigate();
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
+  useEffect(() => setIsMounted(true), []);
 
   const isPro = plan === "pro";
 
@@ -1006,26 +1008,29 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="polaris-card">
           <h3 className="polaris-card-header">Chat Volume (last 7 days)</h3>
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={chatData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(210 10% 89%)" />
-              <XAxis dataKey="day" tick={{ fontSize: 12, fill: "hsl(208 5% 45%)" }} />
-              <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: "hsl(208 5% 45%)" }} />
-              <Tooltip
-                contentStyle={{
-                  background: "hsl(0 0% 100%)",
-                  border: "1px solid hsl(210 10% 89%)",
-                  borderRadius: "8px",
-                  fontSize: 12,
-                }}
-              />
-              <Bar dataKey="chats" fill="hsl(160 100% 25%)" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          {!isMounted ? <div style={{ height: 240 }} /> : (
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={chatData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(210 10% 89%)" />
+                <XAxis dataKey="day" tick={{ fontSize: 12, fill: "hsl(208 5% 45%)" }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: "hsl(208 5% 45%)" }} />
+                <Tooltip
+                  contentStyle={{
+                    background: "hsl(0 0% 100%)",
+                    border: "1px solid hsl(210 10% 89%)",
+                    borderRadius: "8px",
+                    fontSize: 12,
+                  }}
+                />
+                <Bar dataKey="chats" fill="hsl(160 100% 25%)" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </div>
 
         <div className="polaris-card">
           <h3 className="polaris-card-header">Message Activity (last 7 days)</h3>
+          {!isMounted ? <div style={{ height: 240 }} /> : (
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={messageData}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(210 10% 89%)" />
@@ -1048,6 +1053,7 @@ export default function Dashboard() {
               />
             </LineChart>
           </ResponsiveContainer>
+          )}
         </div>
       </div>
 
@@ -1191,7 +1197,7 @@ export default function Dashboard() {
                   <span className="polaris-badge polaris-badge-info">
                     {conv.messageCount} msg{conv.messageCount !== 1 ? "s" : ""}
                   </span>
-                  <span className="text-xs text-muted-foreground">{timeAgo(conv.updatedAt)}</span>
+                  <span className="text-xs text-muted-foreground">{isMounted ? timeAgo(conv.updatedAt) : ""}</span>
                 </div>
               </button>
             ))}
