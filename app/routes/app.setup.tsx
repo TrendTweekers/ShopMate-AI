@@ -17,8 +17,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const hostParam = url.searchParams.get("host") || "";
   const saved = url.searchParams.get("saved");
   const error = url.searchParams.get("error");
+  const idTokenParam = url.searchParams.get("id_token") || "";
 
-  console.log(`[app.setup] Loader START - host: ${hostParam ? "yes" : "no"}, saved: ${saved || "none"}`);
+  console.log(`[app.setup] Loader START - host: ${hostParam ? "yes" : "no"}, id_token: ${idTokenParam ? "yes" : "no"}, saved: ${saved || "none"}`);
 
   let shop: string = "";
   let authSource = "none";
@@ -89,9 +90,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     saved: saved ? parseInt(saved) : null,
     error,
     host: hostParam,
+    idToken: idTokenParam, // Preserve id_token for next redirects
   };
 
-  console.log(`[app.setup] ✓ Loader completed successfully: shop=${loaderData.shop}, saved=${loaderData.saved}`);
+  console.log(`[app.setup] ✓ Loader completed successfully: shop=${loaderData.shop}, saved=${loaderData.saved}, session=${idTokenParam ? "preserved" : "fallback"}`);
   return loaderData;
 };
 
@@ -111,7 +113,7 @@ const toneOptions = [
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function SetupWizard() {
   const loaderData = useLoaderData<typeof loader>();
-  const { host } = loaderData;
+  const { host, idToken } = loaderData;
   const [currentStep, setCurrentStep] = useState(0);
   const [botName, setBotName] = useState(loaderData.botName);
   const [greeting, setGreeting] = useState(loaderData.greeting);
@@ -120,8 +122,11 @@ export default function SetupWizard() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const shopify = useAppBridge();
 
-  // Build form action URL with Shopify context params
-  const formAction = host ? `/app/setup/save?host=${encodeURIComponent(host)}` : "/app/setup/save";
+  // Build form action URL with Shopify context params (host + id_token)
+  const formActionUrl = new URL("/app/setup/save", window.location.origin);
+  if (host) formActionUrl.searchParams.set("host", host);
+  if (idToken) formActionUrl.searchParams.set("id_token", idToken);
+  const formAction = formActionUrl.toString().replace(window.location.origin, "");
 
   // ── Show success toast when step is saved ──
   useEffect(() => {
