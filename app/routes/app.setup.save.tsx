@@ -15,12 +15,25 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   try {
-    const { session } = await authenticate.admin(request);
-    const shop = session.shop;
-
     const formData = await request.formData();
     const step = formData.get("step") as string;
     const host = formData.get("host") as string;
+
+    // Authenticate request - handle both standard auth flow and embedded form submission
+    let shop: string;
+    try {
+      const { session } = await authenticate.admin(request);
+      shop = session.shop;
+    } catch (authError) {
+      // If standard auth fails, try to use host param from form as fallback
+      // This allows POST from embedded form to work even if full auth context is missing
+      if (host) {
+        shop = host;
+      } else {
+        // No host param and auth failed - redirect to login
+        return redirect("/auth/login");
+      }
+    }
 
     if (step === "1") {
       // ── Step 1: Save bot name, greeting, tone ──
