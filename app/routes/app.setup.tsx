@@ -17,60 +17,63 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   let shop: string = "";
   let authSource = "none";
 
-  // Try normal auth first, catching both Error and Response objects
-  let authFailed = false;
-  try {
-    const { session } = await authenticate.admin(request);
-    shop = session.shop;
-    authSource = "admin_auth";
-    console.log(`[app.setup] Auth source: ${authSource} → ${shop}`);
-  } catch (authError) {
-    // In React Router, Response objects (redirects) can be thrown
-    // Check if it's a Response (indicates redirect/error from authenticate.admin)
-    if (authError instanceof Response) {
-      console.log(`[app.setup] Auth threw Response (likely redirect to login)`);
-      authFailed = true;
-    } else {
-      console.log(`[app.setup] Auth threw Error:`, authError);
-      authFailed = true;
+  // Check if we have host param (embedded context fallback)
+  const hostParam = url.searchParams.get("host") || "";
+  console.log(`[app.setup] Loader called. Host param: ${hostParam ? "present" : "missing"}`);
+
+  // Check if request has auth data (id_token in query or cookies)
+  const hasAuthToken = url.searchParams.has("id_token");
+  const hasCookie = request.headers.get("cookie")?.includes("shopify.app.session");
+
+  // Try normal auth ONLY if we have auth data or no fallback available
+  if (hasAuthToken || (hasCookie && !hostParam)) {
+    console.log(`[app.setup] Auth tokens detected, attempting standard auth...`);
+    try {
+      const { session } = await authenticate.admin(request);
+      shop = session.shop;
+      authSource = "admin_auth";
+      console.log(`[app.setup] Auth succeeded: ${authSource} → ${shop}`);
+    } catch (authError) {
+      // Auth failed, but we have host param, so try fallback
+      console.log(`[app.setup] Auth failed, will try host param fallback`);
     }
+  } else {
+    console.log(`[app.setup] No auth tokens + host param available, skipping standard auth`);
   }
 
-  // If standard auth failed, try fallback with host param
-  if (authFailed) {
-    let host = url.searchParams.get("host") || "";
-    console.log(`[app.setup] Auth failed, attempting fallback with host: ${host ? "present" : "missing"}`);
-
-    if (host) {
-      try {
-        // Try to decode as base64
-        const decoded = Buffer.from(host, "base64").toString("utf-8");
-        // If decoded contains "admin.shopify.com/store/", extract the store name
-        if (decoded.includes("admin.shopify.com/store/")) {
-          const storeName = decoded.split("admin.shopify.com/store/")[1];
-          shop = `${storeName}.myshopify.com`;
-          authSource = "base64_host";
-          console.log(`[app.setup] Auth source: ${authSource} → ${shop}`);
-        } else {
-          // Not admin URL, use host as-is
-          shop = host;
-          authSource = "raw_host";
-          console.log(`[app.setup] Auth source: ${authSource} → ${shop}`);
-        }
-      } catch (decodeError) {
-        // Not base64 or couldn't decode, use as-is
-        shop = host;
-        authSource = "raw_host_error";
-        console.log(`[app.setup] Auth source: ${authSource} (decode failed) → ${shop}`);
+  // If still no shop, try fallback with host param
+  if (!shop && hostParam) {
+    console.log(`[app.setup] Attempting fallback: decoding host param...`);
+    try {
+      // Try to decode as base64
+      const decoded = Buffer.from(hostParam, "base64").toString("utf-8");
+      // If decoded contains "admin.shopify.com/store/", extract the store name
+      if (decoded.includes("admin.shopify.com/store/")) {
+        const storeName = decoded.split("admin.shopify.com/store/")[1];
+        shop = `${storeName}.myshopify.com`;
+        authSource = "base64_host";
+        console.log(`[app.setup] Fallback successful: ${authSource} → ${shop}`);
+      } else {
+        // Not admin URL, use host as-is
+        shop = hostParam;
+        authSource = "raw_host";
+        console.log(`[app.setup] Fallback successful: ${authSource} → ${shop}`);
       }
+    } catch (decodeError) {
+      // Not base64 or couldn't decode, use as-is
+      shop = hostParam;
+      authSource = "raw_host_error";
+      console.log(`[app.setup] Fallback (decode error): ${authSource} → ${shop}`);
     }
-
-    if (!shop) {
-      console.log(`[app.setup] FAILED: Auth failed + no host param available - redirecting to login`);
-      throw redirect("/auth/login");
-    }
-    console.log(`[app.setup] Fallback successful: using ${authSource} → ${shop}`);
   }
+
+  // If still no shop, redirect to login
+  if (!shop) {
+    console.log(`[app.setup] FAILED: No shop from auth or fallback, redirecting to login`);
+    throw redirect("/auth/login");
+  }
+
+  console.log(`[app.setup] Using shop from ${authSource}: ${shop}`);
 
   // ── Update last active timestamp & fetch current settings ──
   const settings = await prisma.shopSettings.upsert({
