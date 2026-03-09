@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import type { LoaderFunctionArgs } from "react-router";
-import { useLoaderData, useSearchParams } from "react-router";
+import { useLoaderData } from "react-router";
 import AdminLayout from "~/components/admin/AdminLayout";
 import ChatWidget from "~/components/storefront/ChatWidget";
 import { Check, ArrowRight, ArrowLeft, Bot, Sparkles } from "lucide-react";
@@ -26,6 +26,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
   const success = url.searchParams.get("success") === "true";
   const error = url.searchParams.get("error");
+  const host = url.searchParams.get("host") || "";
 
   return {
     shop,
@@ -35,6 +36,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     quickActions: settings.quickActions ?? ["Track order", "Product recommendations", "Returns & exchanges"],
     success,
     error,
+    host,
   };
 };
 
@@ -54,6 +56,7 @@ const toneOptions = [
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function SetupWizard() {
   const loaderData = useLoaderData<typeof loader>();
+  const { host } = loaderData;
   const [currentStep, setCurrentStep] = useState(0);
   const [botName, setBotName] = useState(loaderData.botName);
   const [greeting, setGreeting] = useState(loaderData.greeting);
@@ -161,7 +164,7 @@ export default function SetupWizard() {
               onSubmit={() => setIsSubmitting(true)}
             >
               {/* Preserve Shopify host param */}
-              <input type="hidden" name="host" value={searchParams.get("host") || ""} />
+              <input type="hidden" name="host" value={host} />
               <input type="hidden" name="step" value={String(currentStep + 1)} />
 
               {/* Step 1: Customize */}
