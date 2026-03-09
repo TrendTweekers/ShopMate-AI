@@ -123,10 +123,12 @@ export default function SetupWizard() {
   const shopify = useAppBridge();
 
   // Build form action URL with Shopify context params (host + id_token)
-  const formActionUrl = new URL("/app/setup/save", window.location.origin);
-  if (host) formActionUrl.searchParams.set("host", host);
-  if (idToken) formActionUrl.searchParams.set("id_token", idToken);
-  const formAction = formActionUrl.toString().replace(window.location.origin, "");
+  // Use simple string concatenation (SSR-safe, no window object)
+  let formAction = "/app/setup/save";
+  const params: string[] = [];
+  if (host) params.push(`host=${encodeURIComponent(host)}`);
+  if (idToken) params.push(`id_token=${encodeURIComponent(idToken)}`);
+  if (params.length > 0) formAction += `?${params.join("&")}`;
 
   // ── Show success toast when step is saved ──
   useEffect(() => {
