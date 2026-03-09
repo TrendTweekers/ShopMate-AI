@@ -17,20 +17,31 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   try {
     const formData = await request.formData();
     const step = formData.get("step") as string;
-    const host = formData.get("host") as string;
+
+    // Get host from multiple sources (form data or URL query params)
+    let host = formData.get("host") as string;
+    if (!host) {
+      // Fallback to URL query params (in case hidden input wasn't sent)
+      const url = new URL(request.url);
+      host = url.searchParams.get("host") || "";
+    }
 
     // Authenticate request - handle both standard auth flow and embedded form submission
     let shop: string;
     try {
       const { session } = await authenticate.admin(request);
       shop = session.shop;
+      console.log(`[app.setup.save] Auth succeeded for shop: ${shop}`);
     } catch (authError) {
-      // If standard auth fails, try to use host param from form as fallback
+      console.log(`[app.setup.save] Auth failed, falling back to host param: ${host}`);
+      // If standard auth fails, try to use host param from form/URL as fallback
       // This allows POST from embedded form to work even if full auth context is missing
       if (host) {
         shop = host;
+        console.log(`[app.setup.save] Using host as shop: ${shop}`);
       } else {
         // No host param and auth failed - redirect to login
+        console.log(`[app.setup.save] No host param and auth failed - redirecting to login`);
         return redirect("/auth/login");
       }
     }
