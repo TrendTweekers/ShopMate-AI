@@ -65,6 +65,9 @@ export default function SetupWizard() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const shopify = useAppBridge();
 
+  // Build form action URL with Shopify context params
+  const formAction = host ? `/app/setup/save?host=${encodeURIComponent(host)}` : "/app/setup/save";
+
   // ── Show success toast when returning from save ──
   useEffect(() => {
     if (loaderData.success) {
@@ -157,7 +160,7 @@ export default function SetupWizard() {
             {/* Step Content */}
             <form
               method="POST"
-              action="/app/setup/save"
+              action={formAction}
               target="_top"
               className="polaris-card animate-fade-in"
               key={currentStep}

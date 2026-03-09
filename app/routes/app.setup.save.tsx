@@ -4,16 +4,21 @@ import { authenticate } from "../shopify.server";
 import prisma from "~/db.server";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
-  const shop = session.shop;
-
-  if (request.method !== "POST") {
-    return redirect("/app/setup?error=invalid_method");
-  }
-
   try {
+    const { session } = await authenticate.admin(request);
+    const shop = session.shop;
+
+    if (request.method !== "POST") {
+      return redirect("/app/setup?error=invalid_method");
+    }
+
     const formData = await request.formData();
     const step = formData.get("step") as string;
+    const host = formData.get("host") as string;
+
+    // Build query string with Shopify context
+    const hostParam = host ? `&host=${encodeURIComponent(host)}` : "";
+    const successParams = (q: string) => `/app/setup?${q}${hostParam}`;
 
     if (step === "1") {
       // ── Step 1: Save bot name, greeting, tone ──
@@ -26,9 +31,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         data: { botName, greeting, tone },
       });
 
-      // Return to setup page with current URL params preserved
-      const url = new URL(request.url);
-      return redirect(`/app/setup?step=1&success=true${url.search.includes("host=") ? `&${url.search.substring(1)}` : ""}`);
+      return redirect(successParams("step=1&success=true"));
     }
 
     if (step === "2") {
@@ -37,8 +40,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const quickActions = quickActionsStr ? JSON.parse(quickActionsStr) : [];
 
       if (quickActions.length === 0) {
-        const url = new URL(request.url);
-        return redirect(`/app/setup?error=no_actions${url.search.includes("host=") ? `&${url.search.substring(1)}` : ""}`);
+        return redirect(successParams("error=no_actions"));
       }
 
       await prisma.shopSettings.update({
@@ -46,8 +48,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         data: { quickActions },
       });
 
-      const url = new URL(request.url);
-      return redirect(`/app/setup?step=2&success=true${url.search.includes("host=") ? `&${url.search.substring(1)}` : ""}`);
+      return redirect(successParams("step=2&success=true"));
     }
 
     if (step === "3") {
@@ -57,16 +58,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         data: { setupCompleted: true },
       });
 
-      // Preserve host param for proper redirect back to embedded app
-      const url = new URL(request.url);
-      const hostParam = url.searchParams.get("host") ? `?host=${url.searchParams.get("host")}` : "";
-      return redirect(`/app${hostParam}`);
+      // Redirect to dashboard with Shopify context
+      return redirect(host ? `/app?host=${encodeURIComponent(host)}` : "/app");
     }
 
-    return redirect(`/app/setup?error=unknown_step${new URL(request.url).search.includes("host=") ? `&${new URL(request.url).search.substring(1)}` : ""}`);
+    return redirect(successParams("error=unknown_step"));
   } catch (err) {
     console.error(`[app.setup.save] Error saving setup:`, err);
-    const url = new URL(request.url);
-    return redirect(`/app/setup?error=save_failed${url.search.includes("host=") ? `&${url.search.substring(1)}` : ""}`);
+    return redirect(successParams("error=save_failed"));
   }
 };
