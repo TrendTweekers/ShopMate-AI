@@ -13,8 +13,43 @@ import prisma from "~/db.server";
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
-  const shop = session.shop;
+  const url = new URL(request.url);
+  let shop: string = "";
+
+  // Try normal auth first
+  try {
+    const { session } = await authenticate.admin(request);
+    shop = session.shop;
+    console.log(`[app.setup] Auth succeeded for shop: ${shop}`);
+  } catch (authError) {
+    // Auth failed, try fallback with host param
+    let host = url.searchParams.get("host") || "";
+    if (host) {
+      try {
+        // Try to decode as base64
+        const decoded = Buffer.from(host, "base64").toString("utf-8");
+        // If decoded contains "admin.shopify.com/store/", extract the store name
+        if (decoded.includes("admin.shopify.com/store/")) {
+          const storeName = decoded.split("admin.shopify.com/store/")[1];
+          shop = `${storeName}.myshopify.com`;
+          console.log(`[app.setup] Fallback: Decoded host from base64: ${shop}`);
+        } else {
+          // Not admin URL, use host as-is
+          shop = host;
+          console.log(`[app.setup] Fallback: Using host directly: ${shop}`);
+        }
+      } catch {
+        // Not base64 or couldn't decode, use as-is
+        shop = host;
+        console.log(`[app.setup] Fallback: Using host as-is (not base64): ${shop}`);
+      }
+    }
+
+    if (!shop) {
+      console.log(`[app.setup] Auth failed and no host param - redirecting to login`);
+      return redirect("/auth/login");
+    }
+  }
 
   // ── Update last active timestamp & fetch current settings ──
   const settings = await prisma.shopSettings.upsert({
@@ -23,7 +58,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     update: { lastActiveAt: new Date() },
   });
 
-  const url = new URL(request.url);
   const success = url.searchParams.get("success") === "true";
   const error = url.searchParams.get("error");
   const host = url.searchParams.get("host") || "";
