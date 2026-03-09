@@ -14,79 +14,73 @@ import prisma from "~/db.server";
 // ─── Loader ──────────────────────────────────────────────────────────────────
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
+  const hostParam = url.searchParams.get("host") || "";
+  const saved = url.searchParams.get("saved");
+  const error = url.searchParams.get("error");
+
+  console.log(`[app.setup] Loader START - host: ${hostParam ? "yes" : "no"}, saved: ${saved || "none"}`);
+
   let shop: string = "";
   let authSource = "none";
 
-  // Check if we have host param (embedded context fallback)
-  const hostParam = url.searchParams.get("host") || "";
-  console.log(`[app.setup] Loader called. Host param: ${hostParam ? "present" : "missing"}`);
-
-  // Check if request has auth data (id_token in query or cookies)
+  // Strategy 1: Try standard authentication if we have tokens
   const hasAuthToken = url.searchParams.has("id_token");
   const hasCookie = request.headers.get("cookie")?.includes("shopify.app.session");
 
-  // Try normal auth ONLY if we have auth data or no fallback available
   if (hasAuthToken || (hasCookie && !hostParam)) {
-    console.log(`[app.setup] Auth tokens detected, attempting standard auth...`);
+    console.log(`[app.setup] Attempting standard auth (tokens detected)...`);
     try {
       const { session } = await authenticate.admin(request);
       shop = session.shop;
       authSource = "admin_auth";
-      console.log(`[app.setup] Auth succeeded: ${authSource} → ${shop}`);
+      console.log(`[app.setup] ✓ Auth succeeded: ${shop}`);
     } catch (authError) {
-      // Auth failed, but we have host param, so try fallback
-      console.log(`[app.setup] Auth failed, will try host param fallback`);
+      console.log(`[app.setup] ✗ Auth failed, will try fallback`);
     }
   } else {
-    console.log(`[app.setup] No auth tokens + host param available, skipping standard auth`);
+    console.log(`[app.setup] Skipping standard auth (no tokens + host available)`);
   }
 
-  // If still no shop, try fallback with host param
+  // Strategy 2: Fallback to host param if we don't have shop yet
   if (!shop && hostParam) {
-    console.log(`[app.setup] Attempting fallback: decoding host param...`);
+    console.log(`[app.setup] Using fallback strategy: decoding host param...`);
     try {
-      // Try to decode as base64
       const decoded = Buffer.from(hostParam, "base64").toString("utf-8");
-      // If decoded contains "admin.shopify.com/store/", extract the store name
       if (decoded.includes("admin.shopify.com/store/")) {
         const storeName = decoded.split("admin.shopify.com/store/")[1];
         shop = `${storeName}.myshopify.com`;
         authSource = "base64_host";
-        console.log(`[app.setup] Fallback successful: ${authSource} → ${shop}`);
       } else {
-        // Not admin URL, use host as-is
         shop = hostParam;
         authSource = "raw_host";
-        console.log(`[app.setup] Fallback successful: ${authSource} → ${shop}`);
       }
+      console.log(`[app.setup] ✓ Fallback succeeded: ${authSource} → ${shop}`);
     } catch (decodeError) {
-      // Not base64 or couldn't decode, use as-is
       shop = hostParam;
-      authSource = "raw_host_error";
-      console.log(`[app.setup] Fallback (decode error): ${authSource} → ${shop}`);
+      authSource = "raw_host_fallback";
+      console.log(`[app.setup] ✓ Fallback (decode failed): ${authSource} → ${shop}`);
     }
   }
 
-  // If still no shop, redirect to login
+  // No shop found - redirect to login
   if (!shop) {
-    console.log(`[app.setup] FAILED: No shop from auth or fallback, redirecting to login`);
+    console.log(`[app.setup] ✗ FAILED: No shop available, redirecting to login`);
     throw redirect("/auth/login");
   }
 
-  console.log(`[app.setup] Using shop from ${authSource}: ${shop}`);
+  // Success! We have shop from either auth or fallback
+  console.log(`[app.setup] ✓ Shop identified: ${shop} (from ${authSource})`);
 
-  // ── Update last active timestamp & fetch current settings ──
+  // Load settings from database
+  console.log(`[app.setup] Loading settings from DB for shop: ${shop}`);
   const settings = await prisma.shopSettings.upsert({
     where: { shop },
     create: { shop, lastActiveAt: new Date() },
     update: { lastActiveAt: new Date() },
   });
 
-  const saved = url.searchParams.get("saved"); // "1" or "2"
-  const error = url.searchParams.get("error");
-  const host = url.searchParams.get("host") || "";
-
-  return {
+  // Return all data needed by component
+  const loaderData = {
     shop,
     botName: settings.botName ?? "ShopMate",
     greeting: settings.greeting ?? "Hi! 👋 How can I help you today?",
@@ -94,8 +88,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     quickActions: settings.quickActions ?? ["Track order", "Product recommendations", "Returns & exchanges"],
     saved: saved ? parseInt(saved) : null,
     error,
-    host,
+    host: hostParam,
   };
+
+  console.log(`[app.setup] ✓ Loader completed successfully: shop=${loaderData.shop}, saved=${loaderData.saved}`);
+  return loaderData;
 };
 
 // ─── Steps ───────────────────────────────────────────────────────────────────
