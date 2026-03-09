@@ -81,7 +81,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         create: { shop, botName, greeting, tone, lastActiveAt: new Date() },
       });
 
-      return redirect(buildRedirectUrl("/app/setup", "step=1&success=true", host));
+      console.log(`[app.setup.save] Step 1 saved, redirecting back to setup with host`);
+      return redirect(buildRedirectUrl("/app/setup", "saved=1", host));
     }
 
     if (step === "2") {
@@ -100,7 +101,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         create: { shop, quickActions, lastActiveAt: new Date() },
       });
 
-      return redirect(buildRedirectUrl("/app/setup", "step=2&success=true", host));
+      console.log(`[app.setup.save] Step 2 saved, redirecting back to setup with host`);
+      return redirect(buildRedirectUrl("/app/setup", "saved=2", host));
     }
 
     if (step === "3") {
@@ -112,6 +114,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         create: { shop, setupCompleted: true, lastActiveAt: new Date() },
       });
 
+      console.log(`[app.setup.save] Setup completed, redirecting to dashboard with host`);
       // Redirect to dashboard with Shopify context
       return redirect(host ? `/app?host=${encodeURIComponent(host)}` : "/app");
     }

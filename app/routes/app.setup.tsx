@@ -58,7 +58,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     update: { lastActiveAt: new Date() },
   });
 
-  const success = url.searchParams.get("success") === "true";
+  const saved = url.searchParams.get("saved"); // "1" or "2"
   const error = url.searchParams.get("error");
   const host = url.searchParams.get("host") || "";
 
@@ -68,7 +68,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     greeting: settings.greeting ?? "Hi! 👋 How can I help you today?",
     tone: (settings.tone ?? "Friendly").toLowerCase(),
     quickActions: settings.quickActions ?? ["Track order", "Product recommendations", "Returns & exchanges"],
-    success,
+    saved: saved ? parseInt(saved) : null,
     error,
     host,
   };
@@ -102,17 +102,18 @@ export default function SetupWizard() {
   // Build form action URL with Shopify context params
   const formAction = host ? `/app/setup/save?host=${encodeURIComponent(host)}` : "/app/setup/save";
 
-  // ── Show success toast when returning from save ──
+  // ── Show success toast when step is saved ──
   useEffect(() => {
-    if (loaderData.success) {
+    if (loaderData.saved !== null) {
       shopify.toast.show("✅ Saved!", { duration: 2000 });
+      // Auto-advance to next step
       setCurrentStep((prev) => Math.min(prev + 1, steps.length - 1));
-      // Clear success param from URL
+      // Clear saved param from URL
       const url = new URL(window.location.href);
-      url.searchParams.delete("success");
+      url.searchParams.delete("saved");
       window.history.replaceState({}, "", url.toString());
     }
-  }, [loaderData.success, shopify]);
+  }, [loaderData.saved, shopify]);
 
   // ── Show error toast if something went wrong ──
   useEffect(() => {
