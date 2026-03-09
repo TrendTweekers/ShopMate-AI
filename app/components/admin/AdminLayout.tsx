@@ -1,4 +1,4 @@
-import { Link, useLocation } from "react-router";
+import { useLocation } from "react-router";
 import {
   LayoutDashboard,
   Wand2,
@@ -61,9 +61,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             const isActive = location.pathname === item.path;
             const Icon = item.icon;
             return (
-              <Link
+              <a
                 key={item.path}
-                to={item.path}
+                href={item.path}
+                onClick={(e) => {
+                  e.preventDefault();
+                  window.location.href = item.path;
+                }}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -93,7 +97,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               >
                 <Icon size={16} style={{ flexShrink: 0 }} />
                 <span>{item.label}</span>
-              </Link>
+              </a>
             );
           })}
         </div>
