@@ -41,9 +41,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const greeting = (formData.get("greeting") as string)?.trim() || "Hi! 👋 How can I help you today?";
       const tone = (formData.get("tone") as string)?.trim() || "Friendly";
 
-      await prisma.shopSettings.update({
+      // Use upsert to create if doesn't exist, update if does
+      await prisma.shopSettings.upsert({
         where: { shop },
-        data: { botName, greeting, tone },
+        update: { botName, greeting, tone, lastActiveAt: new Date() },
+        create: { shop, botName, greeting, tone, lastActiveAt: new Date() },
       });
 
       return redirect(buildRedirectUrl("/app/setup", "step=1&success=true", host));
@@ -58,9 +60,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         return redirect(buildRedirectUrl("/app/setup", "error=no_actions", host));
       }
 
-      await prisma.shopSettings.update({
+      // Use upsert to create if doesn't exist, update if does
+      await prisma.shopSettings.upsert({
         where: { shop },
-        data: { quickActions },
+        update: { quickActions, lastActiveAt: new Date() },
+        create: { shop, quickActions, lastActiveAt: new Date() },
       });
 
       return redirect(buildRedirectUrl("/app/setup", "step=2&success=true", host));
@@ -68,9 +72,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     if (step === "3") {
       // ── Step 3: Mark setup as completed ──
-      await prisma.shopSettings.update({
+      // Use upsert to create if doesn't exist, update if does
+      await prisma.shopSettings.upsert({
         where: { shop },
-        data: { setupCompleted: true },
+        update: { setupCompleted: true, lastActiveAt: new Date() },
+        create: { shop, setupCompleted: true, lastActiveAt: new Date() },
       });
 
       // Redirect to dashboard with Shopify context
