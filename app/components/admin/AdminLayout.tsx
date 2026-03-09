@@ -61,12 +61,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             const isActive = location.pathname === item.path;
             const Icon = item.icon;
             return (
-              <a
+              <button
                 key={item.path}
-                href={item.path}
-                onClick={(e) => {
-                  e.preventDefault();
-                  window.location.href = item.path;
+                onClick={() => {
+                  // Preserve Shopify's ?host= and other query params in embedded context
+                  const currentUrl = new URL(window.location.href);
+                  const params = new URLSearchParams(currentUrl.search);
+                  const newUrl = new URL(item.path, window.location.origin);
+                  newUrl.search = params.toString();
+                  window.location.href = newUrl.toString();
                 }}
                 style={{
                   display: "flex",
@@ -81,6 +84,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   backgroundColor: isActive ? "#f0fdf4" : "transparent",
                   transition: "all 0.15s",
                   cursor: "pointer",
+                  border: "none",
+                  font: "inherit",
                 }}
                 onMouseEnter={(e) => {
                   if (!isActive) {
@@ -97,7 +102,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               >
                 <Icon size={16} style={{ flexShrink: 0 }} />
                 <span>{item.label}</span>
-              </a>
+              </button>
             );
           })}
         </div>
