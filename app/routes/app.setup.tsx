@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import type { LoaderFunctionArgs } from "react-router";
-import { useLoaderData } from "react-router";
+import { useLoaderData, redirect } from "react-router";
 import AdminLayout from "~/components/admin/AdminLayout";
 import ChatWidget from "~/components/storefront/ChatWidget";
 import { Check, ArrowRight, ArrowLeft, Bot, Sparkles } from "lucide-react";
@@ -15,15 +15,32 @@ import prisma from "~/db.server";
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
   let shop: string = "";
+  let authSource = "none";
 
-  // Try normal auth first
+  // Try normal auth first, catching both Error and Response objects
+  let authFailed = false;
   try {
     const { session } = await authenticate.admin(request);
     shop = session.shop;
-    console.log(`[app.setup] Auth succeeded for shop: ${shop}`);
+    authSource = "admin_auth";
+    console.log(`[app.setup] Auth source: ${authSource} → ${shop}`);
   } catch (authError) {
-    // Auth failed, try fallback with host param
+    // In React Router, Response objects (redirects) can be thrown
+    // Check if it's a Response (indicates redirect/error from authenticate.admin)
+    if (authError instanceof Response) {
+      console.log(`[app.setup] Auth threw Response (likely redirect to login)`);
+      authFailed = true;
+    } else {
+      console.log(`[app.setup] Auth threw Error:`, authError);
+      authFailed = true;
+    }
+  }
+
+  // If standard auth failed, try fallback with host param
+  if (authFailed) {
     let host = url.searchParams.get("host") || "";
+    console.log(`[app.setup] Auth failed, attempting fallback with host: ${host ? "present" : "missing"}`);
+
     if (host) {
       try {
         // Try to decode as base64
@@ -32,23 +49,27 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         if (decoded.includes("admin.shopify.com/store/")) {
           const storeName = decoded.split("admin.shopify.com/store/")[1];
           shop = `${storeName}.myshopify.com`;
-          console.log(`[app.setup] Fallback: Decoded host from base64: ${shop}`);
+          authSource = "base64_host";
+          console.log(`[app.setup] Auth source: ${authSource} → ${shop}`);
         } else {
           // Not admin URL, use host as-is
           shop = host;
-          console.log(`[app.setup] Fallback: Using host directly: ${shop}`);
+          authSource = "raw_host";
+          console.log(`[app.setup] Auth source: ${authSource} → ${shop}`);
         }
-      } catch {
+      } catch (decodeError) {
         // Not base64 or couldn't decode, use as-is
         shop = host;
-        console.log(`[app.setup] Fallback: Using host as-is (not base64): ${shop}`);
+        authSource = "raw_host_error";
+        console.log(`[app.setup] Auth source: ${authSource} (decode failed) → ${shop}`);
       }
     }
 
     if (!shop) {
-      console.log(`[app.setup] Auth failed and no host param - redirecting to login`);
-      return redirect("/auth/login");
+      console.log(`[app.setup] FAILED: Auth failed + no host param available - redirecting to login`);
+      throw redirect("/auth/login");
     }
+    console.log(`[app.setup] Fallback successful: using ${authSource} → ${shop}`);
   }
 
   // ── Update last active timestamp & fetch current settings ──
