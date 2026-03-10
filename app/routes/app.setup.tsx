@@ -141,24 +141,21 @@ export default function SetupWizard() {
 
   // 🔍 Handle form submission response (from useFetcher)
   useEffect(() => {
-    if (fetcher.state === "idle" && fetcher.data?.saved !== undefined) {
-      console.log("[SetupWizard] ✅ fetcher success - saved:", fetcher.data.saved);
+    console.log("[fetcher] state changed:", fetcher.state, "data:", fetcher.data);
 
-      // Show toast
+    if (fetcher.state === "idle" && fetcher.data?.saved) {
+      console.log("[fetcher] SUCCESS - saved step:", fetcher.data.saved);
+
       shopify?.toast?.show?.("✅ Saved!", { duration: 2000 });
 
-      // Try to refresh session token, but advance regardless
-      if (shopify && getSessionToken) {
-        getSessionToken(shopify)
-          .then((token) => {
-            console.log("[SetupWizard] ✅ Session token refreshed:", token.substring(0, 20) + "...");
-          })
-          .catch((err) => {
-            console.warn("[SetupWizard] ⚠ Session refresh failed (but continuing):", err?.message);
-          });
-      }
+      getSessionToken(shopify)
+        .then((token) => {
+          console.log("[fetcher] Session refreshed:", token.substring(0, 20) + "...");
+        })
+        .catch((err) => {
+          console.error("[fetcher] Refresh failed:", err?.message);
+        });
 
-      // Auto-advance to next step
       setCurrentStep((prev) => prev + 1);
     }
   }, [fetcher.state, fetcher.data, shopify]);
@@ -426,12 +423,6 @@ export default function SetupWizard() {
                 </div>
               )}
 
-              {/* DEBUG: Show fetcher state and data */}
-              <div style={{ padding: "8px", backgroundColor: "#f0f0f0", borderRadius: "4px", marginBottom: "16px", fontSize: "12px", fontFamily: "monospace" }}>
-                <div>Fetcher state: <strong>{fetcher.state}</strong></div>
-                <div>Fetcher data: <strong>{JSON.stringify(fetcher.data)}</strong></div>
-              </div>
-
               {/* Navigation - INSIDE FORM so submit button works */}
               <div className="flex justify-between gap-2 mt-6">
                 <button
@@ -460,6 +451,11 @@ export default function SetupWizard() {
                     : "Next"}
                   {currentStep < 2 && <ArrowRight className="w-4 h-4" />}
                 </button>
+              </div>
+
+              {/* DEBUG: Show fetcher state and data */}
+              <div style={{ marginTop: "10px", padding: "8px", backgroundColor: "#f0f0f0", borderRadius: "4px", fontSize: "12px", fontFamily: "monospace", color: "#333" }}>
+                Fetcher state: <strong>{fetcher.state}</strong> | Data: <strong>{JSON.stringify(fetcher.data)}</strong>
               </div>
             </fetcher.Form>
           </div>
