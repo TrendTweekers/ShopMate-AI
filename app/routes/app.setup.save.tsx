@@ -4,6 +4,8 @@ import { authenticate } from "../shopify.server";
 import prisma from "~/db.server";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
+  console.log("[app.setup.save] ===== ACTION START =====");
+
   if (request.method !== "POST") {
     console.log("[app.setup.save] ❌ Non-POST request received:", request.method);
     return redirect("/app/setup?error=invalid_method");
@@ -88,7 +90,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         create: { shop, botName, greeting, tone, lastActiveAt: new Date() },
       });
 
-      console.log(`[app.setup.save] ✅ Step 1 saved successfully`);
+      console.log(`[app.setup.save] ✅ Step 1 saved successfully - RETURNING { saved: 1 }`);
       return { saved: 1 };
     }
 
@@ -137,7 +139,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
     return { error: "unknown_step" };
   } catch (err) {
-    console.error(`[app.setup.save] Error saving setup:`, err);
-    return { error: "save_failed" };
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error(`[app.setup.save] ===== CRASH IN ACTION =====`);
+    console.error(`[app.setup.save] Error:`, errorMsg);
+    console.error(`[app.setup.save] Full error:`, err);
+    return { error: "save_failed", details: errorMsg };
   }
 };
