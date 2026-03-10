@@ -215,84 +215,50 @@ export default function SetupWizard() {
 
   // ── IMMEDIATE: Process saved state if present ──
   // Check for saved BEFORE useEffect so it runs even if saved present on mount
-  if (saved !== null && saved !== undefined && processedSaveRef.current !== saved) {
-    console.log(`[SetupWizard] 🔥 IMMEDIATE: Detected saved=${saved}, processing immediately (ref was ${processedSaveRef.current})`);
-    processedSaveRef.current = saved;
+  try {
+    if (saved !== null && saved !== undefined && processedSaveRef.current !== saved) {
+      console.log(`[SetupWizard] 🔥 IMMEDIATE: Detected saved=${saved}, ref was ${processedSaveRef.current}`);
+      processedSaveRef.current = saved;
 
-    // Use setTimeout to ensure this runs after render, allowing toast/effects
-    setTimeout(async () => {
-      try {
-        console.log("[SetupWizard] 🔥 IMMEDIATE: setTimeout callback starting...");
-        console.log("[SetupWizard] 🔥 IMMEDIATE: shopify instance in callback:", {
-          exists: !!shopify,
-          type: typeof shopify,
-          hasWebApi: !!shopify?.webApi,
+      console.log("[SetupWizard] 🔥 IMMEDIATE: showing toast...");
+      shopify?.toast?.show?.("✅ Saved!", { duration: 2000 });
+
+      // DYNAMIC POLLING: Wait for App Bridge to be fully ready
+      console.log("[SetupWizard] 🔥 IMMEDIATE: ⏳ Starting App Bridge check and session refresh...");
+
+      waitForAppBridge(2000)
+        .then(() => {
+          console.log("[SetupWizard] 🔥 IMMEDIATE: App Bridge ready, calling getSessionToken...");
+          return getSessionToken(shopify);
+        })
+        .then((token) => {
+          console.log(`[SetupWizard] ✓ IMMEDIATE session token obtained:`, {
+            hasToken: !!token,
+            length: token?.length || 0,
+            preview: token ? token.substring(0, 20) + "..." : "empty",
+          });
+
+          // Auto-advance to next step
+          console.log("[SetupWizard] 🔥 IMMEDIATE: Auto-advancing to next step");
+          setCurrentStep((prev) => Math.min(prev + 1, steps.length - 1));
+
+          // Clear saved param from URL
+          const url = new URL(window.location.href);
+          url.searchParams.delete("saved");
+          window.history.replaceState({}, "", url.toString());
+        })
+        .catch((error) => {
+          console.error(`[SetupWizard] ✗ IMMEDIATE failed:`, {
+            message: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : "no stack",
+          });
         });
-
-        if (!shopify) {
-          console.error("[SetupWizard] 🔥 IMMEDIATE: ❌ shopify is null/undefined!");
-          return;
-        }
-
-        console.log("[SetupWizard] 🔥 IMMEDIATE: showing toast...");
-        shopify.toast.show("✅ Saved!", { duration: 2000 });
-
-        // DYNAMIC POLLING: Wait for App Bridge to be fully ready
-        console.log("[SetupWizard] 🔥 IMMEDIATE: ⏳ Waiting for App Bridge to initialize...");
-        try {
-          await waitForAppBridge(2000);
-        } catch (waitError) {
-          console.error("[SetupWizard] 🔥 IMMEDIATE: App Bridge initialization failed:", waitError instanceof Error ? waitError.message : String(waitError));
-          return;
-        }
-
-        console.log("[SetupWizard] 🔥 IMMEDIATE: App Bridge ready, calling getSessionToken...");
-        let tokenPromise;
-        try {
-          tokenPromise = getSessionToken(shopify);
-          console.log("[SetupWizard] 🔥 IMMEDIATE: getSessionToken call succeeded, returned:", {
-            isPromise: tokenPromise instanceof Promise,
-            type: typeof tokenPromise,
-          });
-        } catch (callError) {
-          console.error("[SetupWizard] 🔥 IMMEDIATE: getSessionToken threw during call:", {
-            message: callError instanceof Error ? callError.message : String(callError),
-            stack: callError instanceof Error ? callError.stack : "no stack",
-          });
-          return;
-        }
-
-        tokenPromise
-          .then((token) => {
-            console.log(`[SetupWizard] ✓ IMMEDIATE session token obtained:`, {
-              hasToken: !!token,
-              length: token?.length || 0,
-              preview: token ? token.substring(0, 20) + "..." : "empty",
-            });
-          })
-          .catch((error) => {
-            console.error(`[SetupWizard] ✗ IMMEDIATE session token failed:`, {
-              message: error?.message || String(error),
-              stack: error?.stack || "no stack",
-              error,
-            });
-          });
-
-        // Auto-advance to next step
-        console.log("[SetupWizard] 🔥 IMMEDIATE: Auto-advancing to next step");
-        setCurrentStep((prev) => Math.min(prev + 1, steps.length - 1));
-
-        // Clear saved param from URL
-        const url = new URL(window.location.href);
-        url.searchParams.delete("saved");
-        window.history.replaceState({}, "", url.toString());
-      } catch (err) {
-        console.error("[SetupWizard] 🔥 IMMEDIATE: Exception in setTimeout:", {
-          message: err instanceof Error ? err.message : String(err),
-          stack: err instanceof Error ? err.stack : "no stack",
-        });
-      }
-    }, 0);
+    }
+  } catch (err) {
+    console.error("[SetupWizard] 🔥 IMMEDIATE: Exception in render block:", {
+      message: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : "no stack",
+    });
   }
 
   // ── MOUNT: Force refresh Shopify session on initial load ──
