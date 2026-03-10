@@ -158,14 +158,21 @@ export default function SetupWizard() {
   if (idToken) params.push(`id_token=${encodeURIComponent(idToken)}`);
   if (params.length > 0) formAction += `?${params.join("&")}`;
 
-  // 🔍 DEBUG: Verify shopify instance exists
+  // 🔍 DEBUG: Verify shopify instance exists and has required methods
   useEffect(() => {
     console.log("[SetupWizard] 🔍 DEBUG: shopify instance check:", {
       exists: !!shopify,
       type: typeof shopify,
       hasToast: shopify && typeof shopify.toast?.show === "function",
       hasWebApi: shopify && typeof shopify.webApi === "object",
+      webApiMethods: shopify?.webApi ? Object.keys(shopify.webApi) : "no webApi",
+      allMethods: shopify ? Object.keys(shopify) : "shopify is null",
     });
+
+    if (shopify && !shopify.webApi) {
+      console.error("[SetupWizard] 🔍 CRITICAL: shopify.webApi is missing! App Bridge not properly initialized.");
+      console.error("[SetupWizard] 🔍 Available properties:", Object.keys(shopify));
+    }
   }, [shopify]);
 
   // ── IMMEDIATE: Process saved state if present ──
@@ -191,12 +198,31 @@ export default function SetupWizard() {
         console.log("[SetupWizard] 🔥 IMMEDIATE: showing toast...");
         shopify.toast.show("✅ Saved!", { duration: 2000 });
 
+        // SAFETY CHECK: Verify shopify.webApi exists before calling getSessionToken
+        if (!shopify.webApi) {
+          console.error("[SetupWizard] 🔥 IMMEDIATE: ❌ shopify.webApi is missing! Cannot call getSessionToken.");
+          console.error("[SetupWizard] 🔥 IMMEDIATE: shopify structure:", {
+            hasWebApi: !!shopify.webApi,
+            methods: Object.keys(shopify),
+          });
+          return;
+        }
+
         console.log("[SetupWizard] 🔥 IMMEDIATE: calling getSessionToken...");
-        const tokenPromise = getSessionToken(shopify);
-        console.log("[SetupWizard] 🔥 IMMEDIATE: getSessionToken returned:", {
-          isPromise: tokenPromise instanceof Promise,
-          type: typeof tokenPromise,
-        });
+        let tokenPromise;
+        try {
+          tokenPromise = getSessionToken(shopify);
+          console.log("[SetupWizard] 🔥 IMMEDIATE: getSessionToken call succeeded, returned:", {
+            isPromise: tokenPromise instanceof Promise,
+            type: typeof tokenPromise,
+          });
+        } catch (callError) {
+          console.error("[SetupWizard] 🔥 IMMEDIATE: getSessionToken threw during call:", {
+            message: callError instanceof Error ? callError.message : String(callError),
+            stack: callError instanceof Error ? callError.stack : "no stack",
+          });
+          return;
+        }
 
         tokenPromise
           .then((token) => {
@@ -237,6 +263,7 @@ export default function SetupWizard() {
       console.log("[SetupWizard] 📍 useEffect(mount) - shopify instance:", {
         exists: !!shopify,
         type: typeof shopify,
+        hasWebApi: shopify && !!shopify.webApi,
       });
 
       if (!shopify) {
@@ -244,8 +271,27 @@ export default function SetupWizard() {
         return;
       }
 
+      if (!shopify.webApi) {
+        console.error("[SetupWizard] 📍 useEffect(mount): ❌ shopify.webApi is missing! App Bridge not properly initialized.");
+        console.error("[SetupWizard] 📍 shopify structure:", {
+          hasWebApi: !!shopify.webApi,
+          methods: Object.keys(shopify),
+        });
+        return;
+      }
+
       console.log("[SetupWizard] 📍 useEffect(mount) - calling getSessionToken...");
-      const tokenPromise = getSessionToken(shopify);
+      let tokenPromise;
+      try {
+        tokenPromise = getSessionToken(shopify);
+        console.log("[SetupWizard] 📍 useEffect(mount) - getSessionToken call succeeded");
+      } catch (callError) {
+        console.error("[SetupWizard] 📍 useEffect(mount) - getSessionToken threw during call:", {
+          message: callError instanceof Error ? callError.message : String(callError),
+          stack: callError instanceof Error ? callError.stack : "no stack",
+        });
+        return;
+      }
 
       tokenPromise
         .then((token) => {
