@@ -5,6 +5,7 @@ import AdminLayout from "~/components/admin/AdminLayout";
 import ChatWidget from "~/components/storefront/ChatWidget";
 import { Check, ArrowRight, ArrowLeft, Bot, Sparkles } from "lucide-react";
 import { useAppBridge } from "@shopify/app-bridge-react";
+import { getSessionToken } from "@shopify/app-bridge-utils";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { authenticate } from "../shopify.server";
@@ -130,12 +131,26 @@ export default function SetupWizard() {
   if (idToken) params.push(`id_token=${encodeURIComponent(idToken)}`);
   if (params.length > 0) formAction += `?${params.join("&")}`;
 
-  // ── Show success toast when step is saved ──
+  // ── Show success toast when step is saved & refresh Shopify session ──
   useEffect(() => {
     if (loaderData.saved !== null) {
+      console.log(`[SetupWizard] Step ${loaderData.saved} saved, refreshing Shopify session...`);
+
       shopify.toast.show("✅ Saved!", { duration: 2000 });
+
+      // Refresh Shopify App Bridge session token to maintain iframe context
+      // This tells Shopify's embedded iframe wrapper that the session is still valid
+      getSessionToken(shopify)
+        .then((token) => {
+          console.log(`[SetupWizard] ✓ Session token refreshed: ${token ? "success" : "empty"}`);
+        })
+        .catch((error) => {
+          console.error(`[SetupWizard] ✗ Session token refresh failed:`, error);
+        });
+
       // Auto-advance to next step
       setCurrentStep((prev) => Math.min(prev + 1, steps.length - 1));
+
       // Clear saved param from URL
       const url = new URL(window.location.href);
       url.searchParams.delete("saved");
