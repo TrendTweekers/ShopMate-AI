@@ -22,6 +22,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   console.log("[app.setup.save] 🔷 POST request received from:", request.url);
 
   try {
+    // OUTER try to catch ANY error in the entire action
     const formData = await request.formData();
     const step = formData.get("step") as string;
     const url = new URL(request.url);
@@ -148,9 +149,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return jsonResponse({ error: "unknown_step" }, 400);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
+    const errorStack = err instanceof Error ? err.stack : "no stack";
     console.error(`[app.setup.save] ===== CRASH IN ACTION =====`);
-    console.error(`[app.setup.save] Error:`, errorMsg);
-    console.error(`[app.setup.save] Full error:`, err);
+    console.error(`[app.setup.save] Error message:`, errorMsg);
+    console.error(`[app.setup.save] Error stack:`, errorStack);
+    console.error(`[app.setup.save] Error type:`, err?.constructor?.name);
+    console.error(`[app.setup.save] Full error object:`, err);
+
+    // Return error response that useFetcher can deserialize
+    console.error(`[app.setup.save] Returning error response to client`);
     return jsonResponse({ error: "save_failed", details: errorMsg }, 500);
   }
 };
