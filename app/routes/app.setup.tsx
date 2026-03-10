@@ -141,8 +141,8 @@ export default function SetupWizard() {
 
   // 🔍 Handle form submission response (from useFetcher)
   useEffect(() => {
-    if (fetcher.data?.saved !== undefined) {
-      console.log("[SetupWizard] ✅ Form saved! Detected fetcher.data.saved:", fetcher.data.saved);
+    if (fetcher.state === "idle" && fetcher.data?.saved !== undefined) {
+      console.log("[SetupWizard] ✅ fetcher success - saved:", fetcher.data.saved);
 
       // Show toast
       shopify?.toast?.show?.("✅ Saved!", { duration: 2000 });
@@ -159,9 +159,9 @@ export default function SetupWizard() {
       }
 
       // Auto-advance to next step
-      setCurrentStep((prev) => Math.min(prev + 1, steps.length - 1));
+      setCurrentStep((prev) => prev + 1);
     }
-  }, [fetcher.data, shopify]);
+  }, [fetcher.state, fetcher.data, shopify]);
 
   // ── MOUNT: Force refresh Shopify session on initial load ──
   useEffect(() => {
@@ -425,6 +425,12 @@ export default function SetupWizard() {
                   </p>
                 </div>
               )}
+
+              {/* DEBUG: Show fetcher state and data */}
+              <div style={{ padding: "8px", backgroundColor: "#f0f0f0", borderRadius: "4px", marginBottom: "16px", fontSize: "12px", fontFamily: "monospace" }}>
+                <div>Fetcher state: <strong>{fetcher.state}</strong></div>
+                <div>Fetcher data: <strong>{JSON.stringify(fetcher.data)}</strong></div>
+              </div>
 
               {/* Navigation - INSIDE FORM so submit button works */}
               <div className="flex justify-between gap-2 mt-6">
