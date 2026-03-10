@@ -94,7 +94,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     idToken: idTokenParam, // Preserve id_token for next redirects
   };
 
-  console.log(`[app.setup] ✓ Loader completed successfully: shop=${loaderData.shop}, saved=${loaderData.saved}, session=${idTokenParam ? "preserved" : "fallback"}`);
+  console.log(`[app.setup] ✓ Loader completed successfully:`, {
+    shop: loaderData.shop,
+    saved: loaderData.saved,
+    savedType: typeof loaderData.saved,
+    savedRaw: saved,
+    session: idTokenParam ? "preserved" : "fallback",
+  });
   return loaderData;
 };
 
@@ -114,7 +120,7 @@ const toneOptions = [
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function SetupWizard() {
   const loaderData = useLoaderData<typeof loader>();
-  const { host, idToken } = loaderData;
+  const { host, idToken, saved } = loaderData;
   const [currentStep, setCurrentStep] = useState(0);
   const [botName, setBotName] = useState(loaderData.botName);
   const [greeting, setGreeting] = useState(loaderData.greeting);
@@ -122,6 +128,20 @@ export default function SetupWizard() {
   const [quickActions, setQuickActions] = useState(loaderData.quickActions);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const shopify = useAppBridge();
+
+  // 🔍 DEBUG: Log all loader data on mount
+  useEffect(() => {
+    console.log("[SetupWizard] 🔍 Component mounted with loaderData:", {
+      shop: loaderData.shop,
+      saved,
+      host,
+      idToken: idToken ? "present" : "absent",
+      botName,
+      greeting,
+      tone,
+      quickActions,
+    });
+  }, []);
 
   // Build form action URL with Shopify context params (host + id_token)
   // Use simple string concatenation (SSR-safe, no window object)
@@ -131,32 +151,53 @@ export default function SetupWizard() {
   if (idToken) params.push(`id_token=${encodeURIComponent(idToken)}`);
   if (params.length > 0) formAction += `?${params.join("&")}`;
 
+  console.log("[SetupWizard] Form action URL:", formAction);
+
+  // ── MOUNT: Force refresh Shopify session on initial load ──
+  // This establishes session context in Shopify's iframe wrapper
+  useEffect(() => {
+    console.log("[SetupWizard] 📍 Mounted, attempting initial session token refresh...");
+    getSessionToken(shopify)
+      .then((token) => {
+        console.log("[SetupWizard] ✅ Initial session token obtained:", token ? `${token.substring(0, 20)}...` : "empty token");
+      })
+      .catch((error) => {
+        console.error("[SetupWizard] ❌ Initial session token refresh failed:", error);
+      });
+  }, [shopify]);
+
   // ── Show success toast when step is saved & refresh Shopify session ──
   useEffect(() => {
-    if (loaderData.saved !== null) {
-      console.log(`[SetupWizard] Step ${loaderData.saved} saved, refreshing Shopify session...`);
+    console.log("[SetupWizard] 🔄 useEffect triggered - saved:", saved, "type:", typeof saved);
+
+    if (saved !== null && saved !== undefined) {
+      console.log(`[SetupWizard] ✨ Step ${saved} detected as saved, processing...`);
 
       shopify.toast.show("✅ Saved!", { duration: 2000 });
 
       // Refresh Shopify App Bridge session token to maintain iframe context
       // This tells Shopify's embedded iframe wrapper that the session is still valid
+      console.log("[SetupWizard] 🔄 Calling getSessionToken after save...");
       getSessionToken(shopify)
         .then((token) => {
-          console.log(`[SetupWizard] ✓ Session token refreshed: ${token ? "success" : "empty"}`);
+          console.log(`[SetupWizard] ✓ Session token refreshed successfully:`, token ? "✓ Token obtained" : "⚠ Empty token");
         })
         .catch((error) => {
           console.error(`[SetupWizard] ✗ Session token refresh failed:`, error);
         });
 
       // Auto-advance to next step
+      console.log("[SetupWizard] ➡️ Auto-advancing from step", currentStep, "to", Math.min(currentStep + 1, steps.length - 1));
       setCurrentStep((prev) => Math.min(prev + 1, steps.length - 1));
 
       // Clear saved param from URL
       const url = new URL(window.location.href);
       url.searchParams.delete("saved");
       window.history.replaceState({}, "", url.toString());
+    } else {
+      console.log("[SetupWizard] 🔄 useEffect ran but saved is null/undefined, skipping...");
     }
-  }, [loaderData.saved, shopify]);
+  }, [saved, shopify, currentStep]);
 
   // ── Show error toast if something went wrong ──
   useEffect(() => {

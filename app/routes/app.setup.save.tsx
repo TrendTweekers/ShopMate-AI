@@ -12,13 +12,18 @@ function buildRedirectUrl(basePath: string, params: string, host?: string, idTok
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   if (request.method !== "POST") {
+    console.log("[app.setup.save] ❌ Non-POST request received:", request.method);
     return redirect("/app/setup?error=invalid_method");
   }
+
+  console.log("[app.setup.save] 🔷 POST request received from:", request.url);
 
   try {
     const formData = await request.formData();
     const step = formData.get("step") as string;
     const url = new URL(request.url);
+
+    console.log("[app.setup.save] 📋 Form data received - step:", step, "URL:", request.url);
 
     // Get host from multiple sources (form data or URL query params)
     let host = formData.get("host") as string;
@@ -81,6 +86,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const greeting = (formData.get("greeting") as string)?.trim() || "Hi! 👋 How can I help you today?";
       const tone = (formData.get("tone") as string)?.trim() || "Friendly";
 
+      console.log("[app.setup.save] 💾 Step 1 - Saving:", { botName, greeting, tone });
+
       // Use upsert to create if doesn't exist, update if does
       await prisma.shopSettings.upsert({
         where: { shop },
@@ -88,8 +95,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         create: { shop, botName, greeting, tone, lastActiveAt: new Date() },
       });
 
-      console.log(`[app.setup.save] Step 1 saved, redirecting back to setup with host & id_token`);
-      return redirect(buildRedirectUrl("/app/setup", "saved=1", host, idToken));
+      console.log(`[app.setup.save] ✅ Step 1 saved successfully`);
+      const redirectUrl = buildRedirectUrl("/app/setup", "saved=1", host, idToken);
+      console.log(`[app.setup.save] 🔄 Redirecting to:`, redirectUrl);
+      return redirect(redirectUrl);
     }
 
     if (step === "2") {
@@ -97,7 +106,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const quickActionsStr = formData.get("quickActions") as string;
       const quickActions = quickActionsStr ? JSON.parse(quickActionsStr) : [];
 
+      console.log("[app.setup.save] 💾 Step 2 - Saving quick actions:", quickActions);
+
       if (quickActions.length === 0) {
+        console.log("[app.setup.save] ❌ No quick actions selected");
         return redirect(buildRedirectUrl("/app/setup", "error=no_actions", host));
       }
 
@@ -108,12 +120,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         create: { shop, quickActions, lastActiveAt: new Date() },
       });
 
-      console.log(`[app.setup.save] Step 2 saved, redirecting back to setup with host & id_token`);
-      return redirect(buildRedirectUrl("/app/setup", "saved=2", host, idToken));
+      console.log(`[app.setup.save] ✅ Step 2 saved successfully`);
+      const redirectUrl = buildRedirectUrl("/app/setup", "saved=2", host, idToken);
+      console.log(`[app.setup.save] 🔄 Redirecting to:`, redirectUrl);
+      return redirect(redirectUrl);
     }
 
     if (step === "3") {
       // ── Step 3: Mark setup as completed ──
+      console.log("[app.setup.save] 💾 Step 3 - Marking setup as completed");
+
       // Use upsert to create if doesn't exist, update if does
       await prisma.shopSettings.upsert({
         where: { shop },
@@ -121,11 +137,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         create: { shop, setupCompleted: true, lastActiveAt: new Date() },
       });
 
-      console.log(`[app.setup.save] Setup completed, redirecting to dashboard with host & id_token`);
+      console.log(`[app.setup.save] ✅ Setup completed successfully`);
       // Redirect to dashboard with Shopify context (preserve session)
       const dashboardUrl = new URL("/app", new URL(request.url).origin);
       if (host) dashboardUrl.searchParams.set("host", host);
       if (idToken) dashboardUrl.searchParams.set("id_token", idToken);
+      console.log(`[app.setup.save] 🔄 Redirecting to dashboard:`, dashboardUrl.toString());
       return redirect(dashboardUrl.toString());
     }
 
