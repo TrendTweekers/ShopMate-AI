@@ -215,7 +215,7 @@ export default function SetupWizard() {
 
   // ── IMMEDIATE: Process saved state if present ──
   // Check for saved BEFORE useEffect so it runs even if saved present on mount
-  console.log("[SetupWizard] 🔥 CHECKING saved condition:", { saved, refValue: processedSaveRef.current, shouldProcess: saved !== null && saved !== undefined && processedSaveRef.current !== saved });
+  console.log("[SetupWizard] 🔥 BEFORE if block - saved raw:", saved, "ref:", processedSaveRef.current);
 
   try {
     if (saved !== null && saved !== undefined && processedSaveRef.current !== saved) {
@@ -227,9 +227,9 @@ export default function SetupWizard() {
       shopify?.toast?.show?.("✅ Saved!", { duration: 2000 });
       console.log("[SetupWizard] 🔥 Toast called");
 
-      // DYNAMIC POLLING: Wait for App Bridge to be fully ready
-      console.log("[SetupWizard] 🔥 IMMEDIATE: About to call waitForAppBridge(3000)...");
+      console.log("[SetupWizard] 🔥 Starting polling NOW - calling waitForAppBridge...");
 
+      // DYNAMIC POLLING: Wait for App Bridge to be fully ready
       const pollPromise = waitForAppBridge(3000);
       console.log("[SetupWizard] 🔥 waitForAppBridge returned:", { isPromise: pollPromise instanceof Promise });
 
@@ -272,7 +272,7 @@ export default function SetupWizard() {
           });
         });
 
-      console.log("[SetupWizard] 🔥 Promise chain initiated - execution should continue async");
+      console.log("[SetupWizard] 🔥 Promise chain attached - async execution in progress");
     } else {
       console.log("[SetupWizard] 🔥 Skipped if block:", {
         savedIsNull: saved === null,
