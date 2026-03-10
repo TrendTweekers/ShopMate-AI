@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { LoaderFunctionArgs } from "react-router";
 import { useLoaderData, redirect } from "react-router";
 import AdminLayout from "~/components/admin/AdminLayout";
@@ -16,11 +16,17 @@ import prisma from "~/db.server";
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
   const hostParam = url.searchParams.get("host") || "";
-  const saved = url.searchParams.get("saved");
+  const savedParam = url.searchParams.get("saved");
   const error = url.searchParams.get("error");
   const idTokenParam = url.searchParams.get("id_token") || "";
 
-  console.log(`[app.setup] Loader START - host: ${hostParam ? "yes" : "no"}, id_token: ${idTokenParam ? "yes" : "no"}, saved: ${saved || "none"}`);
+  console.log(`[app.setup] Loader START`, {
+    host: hostParam ? "yes" : "no",
+    idToken: idTokenParam ? "yes" : "no",
+    savedParam,
+    savedParamType: typeof savedParam,
+    error: error || "none",
+  });
 
   let shop: string = "";
   let authSource = "none";
@@ -82,24 +88,28 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   });
 
   // Return all data needed by component
+  // Parse saved as a number, or null if not present
+  const savedNumber = savedParam ? parseInt(savedParam, 10) : null;
+
   const loaderData = {
     shop,
     botName: settings.botName ?? "ShopMate",
     greeting: settings.greeting ?? "Hi! 👋 How can I help you today?",
     tone: (settings.tone ?? "Friendly").toLowerCase(),
     quickActions: settings.quickActions ?? ["Track order", "Product recommendations", "Returns & exchanges"],
-    saved: saved ? parseInt(saved) : null,
+    saved: savedNumber,
     error,
     host: hostParam,
     idToken: idTokenParam, // Preserve id_token for next redirects
   };
 
-  console.log(`[app.setup] ✓ Loader completed successfully:`, {
+  console.log(`[app.setup] ✓ Loader completed:`, {
     shop: loaderData.shop,
     saved: loaderData.saved,
     savedType: typeof loaderData.saved,
-    savedRaw: saved,
-    session: idTokenParam ? "preserved" : "fallback",
+    savedParam,
+    host: hostParam ? "✓" : "✗",
+    idToken: idTokenParam ? "✓" : "✗",
   });
   return loaderData;
 };
@@ -128,20 +138,17 @@ export default function SetupWizard() {
   const [quickActions, setQuickActions] = useState(loaderData.quickActions);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const shopify = useAppBridge();
+  const processedSaveRef = useRef<number | null>(null);
 
-  // 🔍 DEBUG: Log all loader data on mount
-  useEffect(() => {
-    console.log("[SetupWizard] 🔍 Component mounted with loaderData:", {
-      shop: loaderData.shop,
-      saved,
-      host,
-      idToken: idToken ? "present" : "absent",
-      botName,
-      greeting,
-      tone,
-      quickActions,
-    });
-  }, []);
+  // 🔍 RENDERING-LEVEL DEBUG: Log on every render
+  console.log("[SetupWizard] 🎬 RENDER - loaderData:", {
+    shop: loaderData.shop,
+    saved,
+    savedType: typeof saved,
+    host: host ? "yes" : "no",
+    idToken: idToken ? "yes" : "no",
+  });
+  console.log("[SetupWizard] 🎬 RENDER - currentStep:", currentStep);
 
   // Build form action URL with Shopify context params (host + id_token)
   // Use simple string concatenation (SSR-safe, no window object)
@@ -151,53 +158,47 @@ export default function SetupWizard() {
   if (idToken) params.push(`id_token=${encodeURIComponent(idToken)}`);
   if (params.length > 0) formAction += `?${params.join("&")}`;
 
-  console.log("[SetupWizard] Form action URL:", formAction);
+  // ── IMMEDIATE: Process saved state if present ──
+  // Check for saved BEFORE useEffect so it runs even if saved present on mount
+  if (saved !== null && saved !== undefined && processedSaveRef.current !== saved) {
+    console.log(`[SetupWizard] 🔥 IMMEDIATE: Detected saved=${saved}, processing immediately (ref was ${processedSaveRef.current})`);
+    processedSaveRef.current = saved;
 
-  // ── MOUNT: Force refresh Shopify session on initial load ──
-  // This establishes session context in Shopify's iframe wrapper
-  useEffect(() => {
-    console.log("[SetupWizard] 📍 Mounted, attempting initial session token refresh...");
-    getSessionToken(shopify)
-      .then((token) => {
-        console.log("[SetupWizard] ✅ Initial session token obtained:", token ? `${token.substring(0, 20)}...` : "empty token");
-      })
-      .catch((error) => {
-        console.error("[SetupWizard] ❌ Initial session token refresh failed:", error);
-      });
-  }, [shopify]);
-
-  // ── Show success toast when step is saved & refresh Shopify session ──
-  useEffect(() => {
-    console.log("[SetupWizard] 🔄 useEffect triggered - saved:", saved, "type:", typeof saved);
-
-    if (saved !== null && saved !== undefined) {
-      console.log(`[SetupWizard] ✨ Step ${saved} detected as saved, processing...`);
-
+    // Use setTimeout to ensure this runs after render, allowing toast/effects
+    setTimeout(() => {
+      console.log("[SetupWizard] 🔥 IMMEDIATE: setTimeout callback - showing toast and refreshing session");
       shopify.toast.show("✅ Saved!", { duration: 2000 });
 
-      // Refresh Shopify App Bridge session token to maintain iframe context
-      // This tells Shopify's embedded iframe wrapper that the session is still valid
-      console.log("[SetupWizard] 🔄 Calling getSessionToken after save...");
       getSessionToken(shopify)
         .then((token) => {
-          console.log(`[SetupWizard] ✓ Session token refreshed successfully:`, token ? "✓ Token obtained" : "⚠ Empty token");
+          console.log(`[SetupWizard] ✓ Immediate session token refresh:`, token ? `${token.substring(0, 20)}...` : "empty");
         })
         .catch((error) => {
-          console.error(`[SetupWizard] ✗ Session token refresh failed:`, error);
+          console.error(`[SetupWizard] ✗ Immediate session refresh failed:`, error);
         });
 
       // Auto-advance to next step
-      console.log("[SetupWizard] ➡️ Auto-advancing from step", currentStep, "to", Math.min(currentStep + 1, steps.length - 1));
+      console.log("[SetupWizard] 🔥 IMMEDIATE: Auto-advancing to next step");
       setCurrentStep((prev) => Math.min(prev + 1, steps.length - 1));
 
       // Clear saved param from URL
       const url = new URL(window.location.href);
       url.searchParams.delete("saved");
       window.history.replaceState({}, "", url.toString());
-    } else {
-      console.log("[SetupWizard] 🔄 useEffect ran but saved is null/undefined, skipping...");
-    }
-  }, [saved, shopify, currentStep]);
+    }, 0);
+  }
+
+  // ── MOUNT: Force refresh Shopify session on initial load ──
+  useEffect(() => {
+    console.log("[SetupWizard] 📍 useEffect(mount) - Attempting initial session token refresh...");
+    getSessionToken(shopify)
+      .then((token) => {
+        console.log("[SetupWizard] ✅ useEffect(mount) - Initial session token obtained:", token ? `${token.substring(0, 20)}...` : "empty");
+      })
+      .catch((error) => {
+        console.error("[SetupWizard] ❌ useEffect(mount) - Initial session token refresh failed:", error);
+      });
+  }, [shopify]);
 
   // ── Show error toast if something went wrong ──
   useEffect(() => {
