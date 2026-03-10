@@ -3,13 +3,6 @@ import { redirect } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "~/db.server";
 
-// Helper to build redirect URL with Shopify context (host + id_token for session preservation)
-function buildRedirectUrl(basePath: string, params: string, host?: string, idToken?: string): string {
-  const hostParam = host ? `&host=${encodeURIComponent(host)}` : "";
-  const idTokenParam = idToken ? `&id_token=${encodeURIComponent(idToken)}` : "";
-  return `${basePath}?${params}${hostParam}${idTokenParam}`;
-}
-
 export const action = async ({ request }: ActionFunctionArgs) => {
   if (request.method !== "POST") {
     console.log("[app.setup.save] ❌ Non-POST request received:", request.method);
@@ -96,9 +89,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       });
 
       console.log(`[app.setup.save] ✅ Step 1 saved successfully`);
-      const redirectUrl = buildRedirectUrl("/app/setup", "saved=1", host, idToken);
-      console.log(`[app.setup.save] 🔄 Redirecting to:`, redirectUrl);
-      return redirect(redirectUrl);
+      return { saved: 1 };
     }
 
     if (step === "2") {
@@ -110,7 +101,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
       if (quickActions.length === 0) {
         console.log("[app.setup.save] ❌ No quick actions selected");
-        return redirect(buildRedirectUrl("/app/setup", "error=no_actions", host));
+        return { error: "no_actions" };
       }
 
       // Use upsert to create if doesn't exist, update if does
@@ -121,9 +112,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       });
 
       console.log(`[app.setup.save] ✅ Step 2 saved successfully`);
-      const redirectUrl = buildRedirectUrl("/app/setup", "saved=2", host, idToken);
-      console.log(`[app.setup.save] 🔄 Redirecting to:`, redirectUrl);
-      return redirect(redirectUrl);
+      return { saved: 2 };
     }
 
     if (step === "3") {
@@ -138,7 +127,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       });
 
       console.log(`[app.setup.save] ✅ Setup completed successfully`);
-      // Redirect to dashboard with Shopify context (preserve session)
+      // For step 3, redirect to dashboard since the wizard is done
       const dashboardUrl = new URL("/app", new URL(request.url).origin);
       if (host) dashboardUrl.searchParams.set("host", host);
       if (idToken) dashboardUrl.searchParams.set("id_token", idToken);
@@ -146,9 +135,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return redirect(dashboardUrl.toString());
     }
 
-    return redirect(buildRedirectUrl("/app/setup", "error=unknown_step", host, idToken));
+    return { error: "unknown_step" };
   } catch (err) {
     console.error(`[app.setup.save] Error saving setup:`, err);
-    return redirect("/app/setup?error=save_failed");
+    return { error: "save_failed" };
   }
 };

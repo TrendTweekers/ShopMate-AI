@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import type { LoaderFunctionArgs } from "react-router";
-import { useLoaderData, redirect } from "react-router";
+import { useLoaderData, redirect, useFetcher } from "react-router";
 import AdminLayout from "~/components/admin/AdminLayout";
 import ChatWidget from "~/components/storefront/ChatWidget";
 import { Check, ArrowRight, ArrowLeft, Bot, Sparkles } from "lucide-react";
@@ -136,156 +136,32 @@ export default function SetupWizard() {
   const [greeting, setGreeting] = useState(loaderData.greeting);
   const [tone, setTone] = useState(loaderData.tone);
   const [quickActions, setQuickActions] = useState(loaderData.quickActions);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const shopify = useAppBridge();
-  const processedSaveRef = useRef<number | null>(null);
+  const fetcher = useFetcher<{ saved?: number }>();
 
-  // 🔍 RENDERING-LEVEL DEBUG: Log on every render
-  console.log("[SetupWizard] 🎬 RENDER - loaderData:", {
-    shop: loaderData.shop,
-    saved,
-    savedType: typeof saved,
-    host: host ? "yes" : "no",
-    idToken: idToken ? "yes" : "no",
-  });
-  console.log("[SetupWizard] 🎬 RENDER - currentStep:", currentStep);
-
-  // Build form action URL with Shopify context params (host + id_token)
-  // Use simple string concatenation (SSR-safe, no window object)
-  let formAction = "/app/setup/save";
-  const params: string[] = [];
-  if (host) params.push(`host=${encodeURIComponent(host)}`);
-  if (idToken) params.push(`id_token=${encodeURIComponent(idToken)}`);
-  if (params.length > 0) formAction += `?${params.join("&")}`;
-
-  // 🔍 DEBUG: Verify shopify instance exists and has required methods
+  // 🔍 Handle form submission response (from useFetcher)
   useEffect(() => {
-    console.log("[SetupWizard] 🔍 DEBUG: shopify instance check:", {
-      exists: !!shopify,
-      type: typeof shopify,
-      hasToast: shopify && typeof shopify.toast?.show === "function",
-      hasWebApi: shopify && typeof shopify.webApi === "object",
-      webApiMethods: shopify?.webApi ? Object.keys(shopify.webApi) : "no webApi",
-      allMethods: shopify ? Object.keys(shopify) : "shopify is null",
-    });
+    if (fetcher.data?.saved !== undefined) {
+      console.log("[SetupWizard] ✅ Form saved! Detected fetcher.data.saved:", fetcher.data.saved);
 
-    if (shopify && !shopify.webApi) {
-      console.error("[SetupWizard] 🔍 CRITICAL: shopify.webApi is missing! App Bridge not properly initialized.");
-      console.error("[SetupWizard] 🔍 Available properties:", Object.keys(shopify));
-    }
-  }, [shopify]);
-
-  // Helper: Dynamic polling for App Bridge readiness
-  const waitForAppBridge = (timeoutMs = 2000): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      let attempts = 0;
-      const maxAttempts = Math.ceil(timeoutMs / 100);
-
-      const checkReady = () => {
-        attempts++;
-
-        if (shopify?.webApi?.subscribe) {
-          console.log(`[SetupWizard] ✓ App Bridge ready after ${attempts} attempt(s)`);
-          resolve();
-          return;
-        }
-
-        if (attempts % 5 === 0) {
-          console.log(`[SetupWizard] ⏳ Polling App Bridge... attempt ${attempts}/${maxAttempts}`);
-        }
-
-        if (attempts >= maxAttempts) {
-          console.error(`[SetupWizard] ❌ App Bridge timeout after ${attempts} attempts (${timeoutMs}ms)`);
-          console.error("[SetupWizard] 🔍 shopify state:", {
-            exists: !!shopify,
-            hasWebApi: !!shopify?.webApi,
-            hasSubscribe: !!shopify?.webApi?.subscribe,
-            webApiMethods: shopify?.webApi ? Object.keys(shopify.webApi) : "none",
-          });
-          reject(new Error("App Bridge initialization timeout"));
-          return;
-        }
-
-        setTimeout(checkReady, 100);
-      };
-
-      checkReady();
-    });
-  };
-
-  // ── IMMEDIATE: Process saved state if present ──
-  // Check for saved BEFORE useEffect so it runs even if saved present on mount
-  console.log("[SetupWizard] 🔥 BEFORE if block - saved raw:", saved, "ref:", processedSaveRef.current);
-
-  try {
-    if (saved !== null && saved !== undefined && processedSaveRef.current !== saved) {
-      console.log(`[SetupWizard] 🔥 ENTERED if block - saved=${saved}, ref was ${processedSaveRef.current}`);
-      processedSaveRef.current = saved;
-      console.log("[SetupWizard] 🔥 Ref updated to", saved);
-
-      console.log("[SetupWizard] 🔥 IMMEDIATE: Calling toast...");
+      // Show toast
       shopify?.toast?.show?.("✅ Saved!", { duration: 2000 });
-      console.log("[SetupWizard] 🔥 Toast called");
 
-      console.log("[SetupWizard] 🔥 Starting polling NOW - calling waitForAppBridge...");
-
-      // DYNAMIC POLLING: Wait for App Bridge to be fully ready
-      const pollPromise = waitForAppBridge(3000);
-      console.log("[SetupWizard] 🔥 waitForAppBridge returned:", { isPromise: pollPromise instanceof Promise });
-
-      pollPromise
-        .then(() => {
-          console.log("[SetupWizard] 🔥 ✓ waitForAppBridge RESOLVED - App Bridge ready");
-          console.log("[SetupWizard] 🔥 About to call getSessionToken...");
-          return getSessionToken(shopify);
-        })
-        .then((token) => {
-          console.log(`[SetupWizard] ✓ getSessionToken SUCCESS:`, {
-            hasToken: !!token,
-            length: token?.length || 0,
-            preview: token ? token.substring(0, 20) + "..." : "empty",
+      // Try to refresh session token, but advance regardless
+      if (shopify && getSessionToken) {
+        getSessionToken(shopify)
+          .then((token) => {
+            console.log("[SetupWizard] ✅ Session token refreshed:", token.substring(0, 20) + "...");
+          })
+          .catch((err) => {
+            console.warn("[SetupWizard] ⚠ Session refresh failed (but continuing):", err?.message);
           });
+      }
 
-          // Auto-advance to next step
-          console.log("[SetupWizard] 🔥 About to advance step and clear URL...");
-          setCurrentStep((prev) => {
-            const newStep = Math.min(prev + 1, steps.length - 1);
-            console.log("[SetupWizard] 🔥 setCurrentStep called:", { prev, newStep });
-            return newStep;
-          });
-
-          // Clear saved param from URL
-          try {
-            const url = new URL(window.location.href);
-            url.searchParams.delete("saved");
-            window.history.replaceState({}, "", url.toString());
-            console.log("[SetupWizard] 🔥 URL cleaned - saved param removed");
-          } catch (urlErr) {
-            console.error("[SetupWizard] 🔥 Error cleaning URL:", urlErr);
-          }
-        })
-        .catch((error) => {
-          console.error(`[SetupWizard] ✗ Promise chain FAILED:`, {
-            message: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : "no stack",
-            errorType: error?.constructor?.name,
-          });
-        });
-
-      console.log("[SetupWizard] 🔥 Promise chain attached - async execution in progress");
-    } else {
-      console.log("[SetupWizard] 🔥 Skipped if block:", {
-        savedIsNull: saved === null,
-        savedIsUndefined: saved === undefined,
-        refMatches: processedSaveRef.current === saved,
-      });
+      // Auto-advance to next step
+      setCurrentStep((prev) => Math.min(prev + 1, steps.length - 1));
     }
-  } catch (err) {
-    console.error("[SetupWizard] 🔥 Exception in render block:", {
-      message: err instanceof Error ? err.message : String(err),
-      stack: err instanceof Error ? err.stack : "no stack",
-    });
-  }
+  }, [fetcher.data, shopify]);
 
   // ── MOUNT: Force refresh Shopify session on initial load ──
   useEffect(() => {
@@ -429,19 +305,14 @@ export default function SetupWizard() {
             </div>
 
             {/* Step Content */}
-            <form
-              method="POST"
-              action={formAction}
-              target="_top"
+            <fetcher.Form
+              method="post"
+              action="/app/setup/save"
               className="polaris-card animate-fade-in"
               key={currentStep}
-              onSubmit={(e) => {
-                setIsSubmitting(true);
-                // Allow default form submission to proceed
-              }}
             >
               {/* Preserve Shopify host param */}
-              <input type="hidden" name="host" value={host} />
+              <input type="hidden" name="host" value={host || ""} />
               <input type="hidden" name="step" value={String(currentStep + 1)} />
 
               {/* Step 1: Customize */}
@@ -568,23 +439,23 @@ export default function SetupWizard() {
                 <button
                   type="submit"
                   disabled={
-                    isSubmitting ||
+                    fetcher.state !== "idle" ||
                     (currentStep === 0 && (!botName.trim() || !greeting.trim())) ||
                     (currentStep === 1 && quickActions.length === 0)
                   }
                   className="px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
                 >
                   {currentStep === 2
-                    ? isSubmitting
+                    ? fetcher.state !== "idle"
                       ? "Completing…"
                       : "Go to Dashboard"
-                    : isSubmitting
+                    : fetcher.state !== "idle"
                     ? "Saving…"
                     : "Next"}
                   {currentStep < 2 && <ArrowRight className="w-4 h-4" />}
                 </button>
               </div>
-            </form>
+            </fetcher.Form>
           </div>
 
           {/* Right: Live Widget Preview (35%) - Fixed Sidebar */}
