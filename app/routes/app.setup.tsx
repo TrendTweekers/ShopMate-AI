@@ -175,6 +175,44 @@ export default function SetupWizard() {
     }
   }, [shopify]);
 
+  // Helper: Dynamic polling for App Bridge readiness
+  const waitForAppBridge = (timeoutMs = 2000): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      let attempts = 0;
+      const maxAttempts = Math.ceil(timeoutMs / 100);
+
+      const checkReady = () => {
+        attempts++;
+
+        if (shopify?.webApi?.subscribe) {
+          console.log(`[SetupWizard] ✓ App Bridge ready after ${attempts} attempt(s)`);
+          resolve();
+          return;
+        }
+
+        if (attempts % 5 === 0) {
+          console.log(`[SetupWizard] ⏳ Polling App Bridge... attempt ${attempts}/${maxAttempts}`);
+        }
+
+        if (attempts >= maxAttempts) {
+          console.error(`[SetupWizard] ❌ App Bridge timeout after ${attempts} attempts (${timeoutMs}ms)`);
+          console.error("[SetupWizard] 🔍 shopify state:", {
+            exists: !!shopify,
+            hasWebApi: !!shopify?.webApi,
+            hasSubscribe: !!shopify?.webApi?.subscribe,
+            webApiMethods: shopify?.webApi ? Object.keys(shopify.webApi) : "none",
+          });
+          reject(new Error("App Bridge initialization timeout"));
+          return;
+        }
+
+        setTimeout(checkReady, 100);
+      };
+
+      checkReady();
+    });
+  };
+
   // ── IMMEDIATE: Process saved state if present ──
   // Check for saved BEFORE useEffect so it runs even if saved present on mount
   if (saved !== null && saved !== undefined && processedSaveRef.current !== saved) {
@@ -188,6 +226,7 @@ export default function SetupWizard() {
         console.log("[SetupWizard] 🔥 IMMEDIATE: shopify instance in callback:", {
           exists: !!shopify,
           type: typeof shopify,
+          hasWebApi: !!shopify?.webApi,
         });
 
         if (!shopify) {
@@ -198,30 +237,13 @@ export default function SetupWizard() {
         console.log("[SetupWizard] 🔥 IMMEDIATE: showing toast...");
         shopify.toast.show("✅ Saved!", { duration: 2000 });
 
-        // SAFETY CHECK: Verify shopify.webApi exists before calling getSessionToken
-        if (!shopify.webApi) {
-          console.warn("[SetupWizard] 🔥 IMMEDIATE: ⏳ shopify.webApi not yet ready, waiting 500ms for App Bridge initialization...");
-          await new Promise((resolve) => setTimeout(resolve, 500));
-
-          if (!shopify.webApi) {
-            console.error("[SetupWizard] 🔥 IMMEDIATE: ❌ shopify.webApi is missing after wait! Cannot call getSessionToken.");
-            console.error("[SetupWizard] 🔥 IMMEDIATE: shopify structure:", {
-              hasWebApi: !!shopify.webApi,
-              methods: Object.keys(shopify),
-            });
-            return;
-          }
-        }
-
-        // Additional safety: check for subscribe method
-        if (!shopify.webApi?.subscribe) {
-          console.warn("[SetupWizard] 🔥 IMMEDIATE: ⏳ shopify.webApi.subscribe not available, waiting for full init...");
-          await new Promise((resolve) => setTimeout(resolve, 500));
-
-          if (!shopify.webApi?.subscribe) {
-            console.error("[SetupWizard] 🔥 IMMEDIATE: ❌ shopify.webApi.subscribe never became available!");
-            return;
-          }
+        // DYNAMIC POLLING: Wait for App Bridge to be fully ready
+        console.log("[SetupWizard] 🔥 IMMEDIATE: ⏳ Waiting for App Bridge to initialize...");
+        try {
+          await waitForAppBridge(2000);
+        } catch (waitError) {
+          console.error("[SetupWizard] 🔥 IMMEDIATE: App Bridge initialization failed:", waitError instanceof Error ? waitError.message : String(waitError));
+          return;
         }
 
         console.log("[SetupWizard] 🔥 IMMEDIATE: App Bridge ready, calling getSessionToken...");
@@ -280,6 +302,7 @@ export default function SetupWizard() {
         exists: !!shopify,
         type: typeof shopify,
         hasWebApi: shopify && !!shopify.webApi,
+        hasSubscribe: shopify && !!shopify.webApi?.subscribe,
       });
 
       if (!shopify) {
@@ -287,46 +310,47 @@ export default function SetupWizard() {
         return;
       }
 
-      if (!shopify.webApi) {
-        console.warn("[SetupWizard] 📍 useEffect(mount): ⏳ shopify.webApi not yet ready, will retry...");
-        // App Bridge might not be fully initialized yet, this is OK - will try again next time
-        return;
-      }
+      // Use polling to wait for App Bridge to initialize
+      const initializeSession = async () => {
+        console.log("[SetupWizard] 📍 useEffect(mount): ⏳ Waiting for App Bridge to initialize...");
+        try {
+          await waitForAppBridge(2000);
+        } catch (waitError) {
+          console.warn("[SetupWizard] 📍 useEffect(mount): App Bridge not ready yet, skipping initial session refresh");
+          return;
+        }
 
-      // Additional safety: check for subscribe method
-      if (!shopify.webApi?.subscribe) {
-        console.warn("[SetupWizard] 📍 useEffect(mount): ⏳ shopify.webApi.subscribe not available yet");
-        return;
-      }
-
-      console.log("[SetupWizard] 📍 useEffect(mount) - App Bridge ready, calling getSessionToken...");
-      let tokenPromise;
-      try {
-        tokenPromise = getSessionToken(shopify);
-        console.log("[SetupWizard] 📍 useEffect(mount) - getSessionToken call succeeded");
-      } catch (callError) {
-        console.error("[SetupWizard] 📍 useEffect(mount) - getSessionToken threw during call:", {
-          message: callError instanceof Error ? callError.message : String(callError),
-          stack: callError instanceof Error ? callError.stack : "no stack",
-        });
-        return;
-      }
-
-      tokenPromise
-        .then((token) => {
-          console.log("[SetupWizard] ✅ useEffect(mount) - session token obtained:", {
-            hasToken: !!token,
-            length: token?.length || 0,
-            preview: token ? token.substring(0, 20) + "..." : "empty",
+        console.log("[SetupWizard] 📍 useEffect(mount): App Bridge ready, calling getSessionToken...");
+        let tokenPromise;
+        try {
+          tokenPromise = getSessionToken(shopify);
+          console.log("[SetupWizard] 📍 useEffect(mount) - getSessionToken call succeeded");
+        } catch (callError) {
+          console.error("[SetupWizard] 📍 useEffect(mount) - getSessionToken threw during call:", {
+            message: callError instanceof Error ? callError.message : String(callError),
+            stack: callError instanceof Error ? callError.stack : "no stack",
           });
-        })
-        .catch((error) => {
-          console.error("[SetupWizard] ❌ useEffect(mount) - session token failed:", {
-            message: error?.message || String(error),
-            stack: error?.stack || "no stack",
-            error,
+          return;
+        }
+
+        tokenPromise
+          .then((token) => {
+            console.log("[SetupWizard] ✅ useEffect(mount) - session token obtained:", {
+              hasToken: !!token,
+              length: token?.length || 0,
+              preview: token ? token.substring(0, 20) + "..." : "empty",
+            });
+          })
+          .catch((error) => {
+            console.error("[SetupWizard] ❌ useEffect(mount) - session token failed:", {
+              message: error?.message || String(error),
+              stack: error?.stack || "no stack",
+              error,
+            });
           });
-        });
+      };
+
+      initializeSession();
     } catch (err) {
       console.error("[SetupWizard] 📍 useEffect(mount) - Exception:", {
         message: err instanceof Error ? err.message : String(err),
