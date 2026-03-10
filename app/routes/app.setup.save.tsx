@@ -1,5 +1,6 @@
 import type { ActionFunctionArgs } from "react-router";
 import { redirect } from "react-router";
+import { json } from "@react-router/node";
 import { authenticate } from "../shopify.server";
 import prisma from "~/db.server";
 
@@ -90,8 +91,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         create: { shop, botName, greeting, tone, lastActiveAt: new Date() },
       });
 
-      console.log(`[app.setup.save] ✅ Step 1 saved successfully - RETURNING { saved: 1 }`);
-      return { saved: 1 };
+      console.log(`[app.setup.save] ✅ Step 1 saved successfully - RETURNING json({ saved: 1 })`);
+      return json({ saved: 1 });
     }
 
     if (step === "2") {
@@ -103,7 +104,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
       if (quickActions.length === 0) {
         console.log("[app.setup.save] ❌ No quick actions selected");
-        return { error: "no_actions" };
+        return json({ error: "no_actions" }, { status: 400 });
       }
 
       // Use upsert to create if doesn't exist, update if does
@@ -114,7 +115,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       });
 
       console.log(`[app.setup.save] ✅ Step 2 saved successfully`);
-      return { saved: 2 };
+      return json({ saved: 2 });
     }
 
     if (step === "3") {
@@ -137,12 +138,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return redirect(dashboardUrl.toString());
     }
 
-    return { error: "unknown_step" };
+    return json({ error: "unknown_step" }, { status: 400 });
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     console.error(`[app.setup.save] ===== CRASH IN ACTION =====`);
     console.error(`[app.setup.save] Error:`, errorMsg);
     console.error(`[app.setup.save] Full error:`, err);
-    return { error: "save_failed", details: errorMsg };
+    return json({ error: "save_failed", details: errorMsg }, { status: 500 });
   }
 };
