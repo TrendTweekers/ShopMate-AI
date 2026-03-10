@@ -141,10 +141,10 @@ export default function SetupWizard() {
 
   // 🔍 Handle form submission response (from useFetcher)
   useEffect(() => {
-    console.log("[fetcher] state changed:", fetcher.state, "data:", fetcher.data);
+    console.log("[fetcher] state changed to:", fetcher.state, "data:", fetcher.data);
 
     if (fetcher.state === "idle" && fetcher.data?.saved) {
-      console.log("[fetcher] SUCCESS - saved step:", fetcher.data.saved);
+      console.log("[fetcher] SUCCESS - processing saved step:", fetcher.data.saved);
 
       shopify?.toast?.show?.("✅ Saved!", { duration: 2000 });
 
@@ -157,6 +157,14 @@ export default function SetupWizard() {
         });
 
       setCurrentStep((prev) => prev + 1);
+    }
+
+    // Safety reset if stuck in submitting > 5 seconds
+    if (fetcher.state === "submitting") {
+      const timer = setTimeout(() => {
+        console.warn("[fetcher] WARNING: Still submitting after 5s - check server logs");
+      }, 5000);
+      return () => clearTimeout(timer);
     }
   }, [fetcher.state, fetcher.data, shopify]);
 
