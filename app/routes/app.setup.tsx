@@ -158,6 +158,16 @@ export default function SetupWizard() {
   if (idToken) params.push(`id_token=${encodeURIComponent(idToken)}`);
   if (params.length > 0) formAction += `?${params.join("&")}`;
 
+  // 🔍 DEBUG: Verify shopify instance exists
+  useEffect(() => {
+    console.log("[SetupWizard] 🔍 DEBUG: shopify instance check:", {
+      exists: !!shopify,
+      type: typeof shopify,
+      hasToast: shopify && typeof shopify.toast?.show === "function",
+      hasWebApi: shopify && typeof shopify.webApi === "object",
+    });
+  }, [shopify]);
+
   // ── IMMEDIATE: Process saved state if present ──
   // Check for saved BEFORE useEffect so it runs even if saved present on mount
   if (saved !== null && saved !== undefined && processedSaveRef.current !== saved) {
@@ -166,38 +176,98 @@ export default function SetupWizard() {
 
     // Use setTimeout to ensure this runs after render, allowing toast/effects
     setTimeout(() => {
-      console.log("[SetupWizard] 🔥 IMMEDIATE: setTimeout callback - showing toast and refreshing session");
-      shopify.toast.show("✅ Saved!", { duration: 2000 });
-
-      getSessionToken(shopify)
-        .then((token) => {
-          console.log(`[SetupWizard] ✓ Immediate session token refresh:`, token ? `${token.substring(0, 20)}...` : "empty");
-        })
-        .catch((error) => {
-          console.error(`[SetupWizard] ✗ Immediate session refresh failed:`, error);
+      try {
+        console.log("[SetupWizard] 🔥 IMMEDIATE: setTimeout callback starting...");
+        console.log("[SetupWizard] 🔥 IMMEDIATE: shopify instance in callback:", {
+          exists: !!shopify,
+          type: typeof shopify,
         });
 
-      // Auto-advance to next step
-      console.log("[SetupWizard] 🔥 IMMEDIATE: Auto-advancing to next step");
-      setCurrentStep((prev) => Math.min(prev + 1, steps.length - 1));
+        if (!shopify) {
+          console.error("[SetupWizard] 🔥 IMMEDIATE: ❌ shopify is null/undefined!");
+          return;
+        }
 
-      // Clear saved param from URL
-      const url = new URL(window.location.href);
-      url.searchParams.delete("saved");
-      window.history.replaceState({}, "", url.toString());
+        console.log("[SetupWizard] 🔥 IMMEDIATE: showing toast...");
+        shopify.toast.show("✅ Saved!", { duration: 2000 });
+
+        console.log("[SetupWizard] 🔥 IMMEDIATE: calling getSessionToken...");
+        const tokenPromise = getSessionToken(shopify);
+        console.log("[SetupWizard] 🔥 IMMEDIATE: getSessionToken returned:", {
+          isPromise: tokenPromise instanceof Promise,
+          type: typeof tokenPromise,
+        });
+
+        tokenPromise
+          .then((token) => {
+            console.log(`[SetupWizard] ✓ IMMEDIATE session token obtained:`, {
+              hasToken: !!token,
+              length: token?.length || 0,
+              preview: token ? token.substring(0, 20) + "..." : "empty",
+            });
+          })
+          .catch((error) => {
+            console.error(`[SetupWizard] ✗ IMMEDIATE session token failed:`, {
+              message: error?.message || String(error),
+              stack: error?.stack || "no stack",
+              error,
+            });
+          });
+
+        // Auto-advance to next step
+        console.log("[SetupWizard] 🔥 IMMEDIATE: Auto-advancing to next step");
+        setCurrentStep((prev) => Math.min(prev + 1, steps.length - 1));
+
+        // Clear saved param from URL
+        const url = new URL(window.location.href);
+        url.searchParams.delete("saved");
+        window.history.replaceState({}, "", url.toString());
+      } catch (err) {
+        console.error("[SetupWizard] 🔥 IMMEDIATE: Exception in setTimeout:", {
+          message: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : "no stack",
+        });
+      }
     }, 0);
   }
 
   // ── MOUNT: Force refresh Shopify session on initial load ──
   useEffect(() => {
-    console.log("[SetupWizard] 📍 useEffect(mount) - Attempting initial session token refresh...");
-    getSessionToken(shopify)
-      .then((token) => {
-        console.log("[SetupWizard] ✅ useEffect(mount) - Initial session token obtained:", token ? `${token.substring(0, 20)}...` : "empty");
-      })
-      .catch((error) => {
-        console.error("[SetupWizard] ❌ useEffect(mount) - Initial session token refresh failed:", error);
+    try {
+      console.log("[SetupWizard] 📍 useEffect(mount) - shopify instance:", {
+        exists: !!shopify,
+        type: typeof shopify,
       });
+
+      if (!shopify) {
+        console.error("[SetupWizard] 📍 useEffect(mount): shopify is null/undefined!");
+        return;
+      }
+
+      console.log("[SetupWizard] 📍 useEffect(mount) - calling getSessionToken...");
+      const tokenPromise = getSessionToken(shopify);
+
+      tokenPromise
+        .then((token) => {
+          console.log("[SetupWizard] ✅ useEffect(mount) - session token obtained:", {
+            hasToken: !!token,
+            length: token?.length || 0,
+            preview: token ? token.substring(0, 20) + "..." : "empty",
+          });
+        })
+        .catch((error) => {
+          console.error("[SetupWizard] ❌ useEffect(mount) - session token failed:", {
+            message: error?.message || String(error),
+            stack: error?.stack || "no stack",
+            error,
+          });
+        });
+    } catch (err) {
+      console.error("[SetupWizard] 📍 useEffect(mount) - Exception:", {
+        message: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : "no stack",
+      });
+    }
   }, [shopify]);
 
   // ── Show error toast if something went wrong ──
