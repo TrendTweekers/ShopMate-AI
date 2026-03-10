@@ -215,47 +215,73 @@ export default function SetupWizard() {
 
   // ── IMMEDIATE: Process saved state if present ──
   // Check for saved BEFORE useEffect so it runs even if saved present on mount
+  console.log("[SetupWizard] 🔥 CHECKING saved condition:", { saved, refValue: processedSaveRef.current, shouldProcess: saved !== null && saved !== undefined && processedSaveRef.current !== saved });
+
   try {
     if (saved !== null && saved !== undefined && processedSaveRef.current !== saved) {
-      console.log(`[SetupWizard] 🔥 IMMEDIATE: Detected saved=${saved}, ref was ${processedSaveRef.current}`);
+      console.log(`[SetupWizard] 🔥 ENTERED if block - saved=${saved}, ref was ${processedSaveRef.current}`);
       processedSaveRef.current = saved;
+      console.log("[SetupWizard] 🔥 Ref updated to", saved);
 
-      console.log("[SetupWizard] 🔥 IMMEDIATE: showing toast...");
+      console.log("[SetupWizard] 🔥 IMMEDIATE: Calling toast...");
       shopify?.toast?.show?.("✅ Saved!", { duration: 2000 });
+      console.log("[SetupWizard] 🔥 Toast called");
 
       // DYNAMIC POLLING: Wait for App Bridge to be fully ready
-      console.log("[SetupWizard] 🔥 IMMEDIATE: ⏳ Starting App Bridge check and session refresh...");
+      console.log("[SetupWizard] 🔥 IMMEDIATE: About to call waitForAppBridge(3000)...");
 
-      waitForAppBridge(2000)
+      const pollPromise = waitForAppBridge(3000);
+      console.log("[SetupWizard] 🔥 waitForAppBridge returned:", { isPromise: pollPromise instanceof Promise });
+
+      pollPromise
         .then(() => {
-          console.log("[SetupWizard] 🔥 IMMEDIATE: App Bridge ready, calling getSessionToken...");
+          console.log("[SetupWizard] 🔥 ✓ waitForAppBridge RESOLVED - App Bridge ready");
+          console.log("[SetupWizard] 🔥 About to call getSessionToken...");
           return getSessionToken(shopify);
         })
         .then((token) => {
-          console.log(`[SetupWizard] ✓ IMMEDIATE session token obtained:`, {
+          console.log(`[SetupWizard] ✓ getSessionToken SUCCESS:`, {
             hasToken: !!token,
             length: token?.length || 0,
             preview: token ? token.substring(0, 20) + "..." : "empty",
           });
 
           // Auto-advance to next step
-          console.log("[SetupWizard] 🔥 IMMEDIATE: Auto-advancing to next step");
-          setCurrentStep((prev) => Math.min(prev + 1, steps.length - 1));
+          console.log("[SetupWizard] 🔥 About to advance step and clear URL...");
+          setCurrentStep((prev) => {
+            const newStep = Math.min(prev + 1, steps.length - 1);
+            console.log("[SetupWizard] 🔥 setCurrentStep called:", { prev, newStep });
+            return newStep;
+          });
 
           // Clear saved param from URL
-          const url = new URL(window.location.href);
-          url.searchParams.delete("saved");
-          window.history.replaceState({}, "", url.toString());
+          try {
+            const url = new URL(window.location.href);
+            url.searchParams.delete("saved");
+            window.history.replaceState({}, "", url.toString());
+            console.log("[SetupWizard] 🔥 URL cleaned - saved param removed");
+          } catch (urlErr) {
+            console.error("[SetupWizard] 🔥 Error cleaning URL:", urlErr);
+          }
         })
         .catch((error) => {
-          console.error(`[SetupWizard] ✗ IMMEDIATE failed:`, {
+          console.error(`[SetupWizard] ✗ Promise chain FAILED:`, {
             message: error instanceof Error ? error.message : String(error),
             stack: error instanceof Error ? error.stack : "no stack",
+            errorType: error?.constructor?.name,
           });
         });
+
+      console.log("[SetupWizard] 🔥 Promise chain initiated - execution should continue async");
+    } else {
+      console.log("[SetupWizard] 🔥 Skipped if block:", {
+        savedIsNull: saved === null,
+        savedIsUndefined: saved === undefined,
+        refMatches: processedSaveRef.current === saved,
+      });
     }
   } catch (err) {
-    console.error("[SetupWizard] 🔥 IMMEDIATE: Exception in render block:", {
+    console.error("[SetupWizard] 🔥 Exception in render block:", {
       message: err instanceof Error ? err.message : String(err),
       stack: err instanceof Error ? err.stack : "no stack",
     });
