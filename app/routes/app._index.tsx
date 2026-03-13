@@ -165,12 +165,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     let quickActions: string[] = [];
     try { quickActions = JSON.parse(quickActionsRaw); } catch { quickActions = []; }
 
-    // Preserve the Shopify `host` param in the redirect so App Bridge can
-    // re-authenticate the embedded iframe (without it the browser gets
-    // redirected to /auth/login immediately after the 302).
+    // Redirect back to /app but with ALL Shopify params (host, id_token, embedded,
+    // hmac, etc.) preserved so authenticate.admin() can re-use the id_token JWT
+    // without triggering a full OAuth dance.  Passing only ?host= is not enough —
+    // the Shopify session middleware also needs id_token (or a session cookie).
     const reqUrl = new URL(request.url);
-    const hostParam = reqUrl.searchParams.get("host") || "";
-    const dashboardUrl = hostParam ? `/app?host=${encodeURIComponent(hostParam)}` : "/app";
+    reqUrl.pathname = "/app";
+    reqUrl.searchParams.delete("index"); // remove the routing marker we added
+    const dashboardUrl = reqUrl.toString();
 
     try {
       await prisma.shopSettings.update({

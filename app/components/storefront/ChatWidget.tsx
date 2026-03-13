@@ -25,6 +25,8 @@ interface ChatWidgetProps {
   botName?: string;
   /** Override the initial greeting message */
   greeting?: string;
+  /** Which quick action buttons to show (labels must match ACTION_ICONS keys) */
+  quickActions?: string[];
 }
 
 const SESSION_KEY = "shopmate_conversation_id";
@@ -65,7 +67,16 @@ function ProductCard({ product }: { product: Product }) {
   );
 }
 
-export default function ChatWidget({ shop, botName = "ShopMate AI", greeting = "Hi! 👋 How can I help you today?" }: ChatWidgetProps) {
+// Map quick action label → icon
+const ACTION_ICONS: Record<string, React.ElementType> = {
+  "Track my order":          Package,
+  "Product recommendations": Sparkles,
+  "Returns & exchanges":     RotateCcw,
+};
+
+const DEFAULT_QUICK_ACTIONS = ["Track my order", "Product recommendations", "Returns & exchanges"];
+
+export default function ChatWidget({ shop, botName = "ShopMate AI", greeting = "Hi! 👋 How can I help you today?", quickActions }: ChatWidgetProps) {
   const [open, setOpen] = useState(true);
   const [view, setView] = useState<View>("home");
   const [messages, setMessages] = useState<Message[]>([
@@ -223,34 +234,25 @@ export default function ChatWidget({ shop, botName = "ShopMate AI", greeting = "
                     Quick Actions
                   </p>
                   <div className="space-y-2">
-                    {[
-                      {
-                        label: "Track my order",
-                        icon: Package,
-                        action: () => setView("tracking"),
-                      },
-                      {
-                        label: "Product recommendations",
-                        icon: Sparkles,
-                        action: () => handleQuickAction("Show me some product recommendations"),
-                      },
-                      {
-                        label: "Returns & exchanges",
-                        icon: RotateCcw,
-                        action: () => handleQuickAction("I need help with a return or exchange"),
-                      },
-                    ].map((a) => (
-                      <button
-                        key={a.label}
-                        onClick={a.action}
-                        className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors text-left"
-                      >
-                        <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center flex-shrink-0">
-                          <a.icon className="w-4 h-4 text-accent-foreground" />
-                        </div>
-                        <span className="text-sm font-medium text-foreground">{a.label}</span>
-                      </button>
-                    ))}
+                    {(quickActions ?? DEFAULT_QUICK_ACTIONS).map((label) => {
+                      const Icon = ACTION_ICONS[label] ?? MessageCircle;
+                      const onAction =
+                        label === "Track my order"
+                          ? () => setView("tracking")
+                          : () => handleQuickAction(label);
+                      return (
+                        <button
+                          key={label}
+                          onClick={onAction}
+                          className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors text-left"
+                        >
+                          <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center flex-shrink-0">
+                            <Icon className="w-4 h-4 text-accent-foreground" />
+                          </div>
+                          <span className="text-sm font-medium text-foreground">{label}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}

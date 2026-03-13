@@ -490,6 +490,7 @@ export default function SetupWizard() {
                       shop={loaderData.shop}
                       botName={botName || "ShopMate AI"}
                       greeting={greeting}
+                      quickActions={quickActions}
                     />
                   </div>
                 </div>
