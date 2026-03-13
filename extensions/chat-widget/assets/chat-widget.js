@@ -53,12 +53,16 @@
   // saved dashboard values (botName, greeting, tone, quickActions).
   if (SHOP) {
     try {
-      const settingsRes = await fetch(
-        "/apps/shopmate/settings?shop=" + encodeURIComponent(SHOP),
-        { headers: { Accept: "application/json" } }
-      );
+      // Add a cache-bust param so the browser never serves a stale response
+      // (the server now sends Cache-Control: no-store but older cached responses
+      // may still exist in browser cache from before this fix).
+      var settingsUrl = "/apps/shopmate/settings?shop=" + encodeURIComponent(SHOP)
+                      + "&_t=" + Date.now();
+      var settingsRes = await fetch(settingsUrl, {
+        headers: { Accept: "application/json", "Cache-Control": "no-cache" }
+      });
       if (settingsRes.ok) {
-        const s = await settingsRes.json();
+        var s = await settingsRes.json();
         if (s.widgetEnabled === false) {
           console.log("[ShopMate] Widget is disabled for this shop — not rendering.");
           return;
@@ -68,10 +72,13 @@
         if (Array.isArray(s.quickActions) && s.quickActions.length > 0) {
           QUICK_REPLIES = s.quickActions;
         }
-        console.log("[ShopMate] Settings loaded from DB:", { botName: BOT_NAME, greeting: GREETING });
+        console.log("[ShopMate] Settings loaded from DB:", { botName: BOT_NAME, greeting: GREETING, quickReplies: QUICK_REPLIES });
+      } else {
+        // Log the HTTP status so it's visible in the browser console for debugging
+        console.warn("[ShopMate] Settings fetch returned HTTP " + settingsRes.status + " — using theme defaults. URL: " + settingsUrl);
       }
     } catch (settingsErr) {
-      console.warn("[ShopMate] Could not load DB settings, using theme defaults:", settingsErr);
+      console.warn("[ShopMate] Could not load DB settings (network error), using theme defaults:", settingsErr);
     }
   }
   // Always relative so Shopify's proxy adds the HMAC signature.

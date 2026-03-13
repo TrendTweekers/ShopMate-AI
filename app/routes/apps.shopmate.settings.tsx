@@ -18,7 +18,11 @@ const CORS = {
   "Access-Control-Allow-Methods": "GET, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
   "Content-Type":                 "application/json",
-  "Cache-Control":                "public, max-age=60", // 60s edge cache
+  // Never cache — settings change immediately when the merchant saves.
+  // Shopify's App Proxy would serve stale responses for up to max-age
+  // seconds if we set Cache-Control: public, causing the widget to show
+  // old values after a save.
+  "Cache-Control":                "no-store",
 };
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -27,16 +31,24 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     return new Response(null, { status: 204, headers: CORS });
   }
 
+  const reqUrl = new URL(request.url);
+
   // Authenticate via Shopify App Proxy HMAC
-  let shop: string;
+  let shop: string = "";
   try {
     const { session } = await authenticate.public.appProxy(request);
     shop = session?.shop ?? "";
   } catch {
-    // Fallback: read shop from query param (Shopify always sends it)
-    const url = new URL(request.url);
-    shop = url.searchParams.get("shop") || "";
+    // appProxy threw — will fall back to query param below
   }
+
+  // Fallback: if auth returned empty shop (null session) OR threw,
+  // read from ?shop= query param (Shopify's proxy always adds it).
+  if (!shop) {
+    shop = reqUrl.searchParams.get("shop") || "";
+  }
+
+  console.log("[apps.shopmate.settings] shop resolved:", shop || "(empty)", "| url:", reqUrl.pathname + reqUrl.search);
 
   if (!shop) {
     return new Response(
