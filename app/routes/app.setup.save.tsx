@@ -11,17 +11,19 @@ function jsonResponse(data: unknown, status = 200) {
 }
 
 export const action = async ({ request }: ActionFunctionArgs) => {
+  console.log("[save action] ACTION RECEIVED");
   console.log("[app.setup.save] ===== ACTION START =====");
 
   if (request.method !== "POST") {
     return jsonResponse({ error: "invalid_method" }, 405);
   }
 
-  console.log("[app.setup.save] POST received, Content-Type:", request.headers.get("content-type"));
+  const contentType = request.headers.get("content-type") ?? "";
+  console.log("[app.setup.save] POST received, Content-Type:", contentType);
 
   try {
-    // Parse JSON body (sent by direct fetch() from the client)
-    const body = await request.json() as {
+    // Parse body — support both JSON (fetch) and form-urlencoded (native <form>)
+    let body: {
       step?: number | string;
       botName?: string;
       greeting?: string;
@@ -29,6 +31,27 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       quickActions?: string[];
       host?: string;
     };
+
+    if (contentType.includes("application/x-www-form-urlencoded") ||
+        contentType.includes("multipart/form-data")) {
+      const formData = await request.formData();
+      console.log("[save action] Form data:", Object.fromEntries(formData));
+      const rawQuickActions = formData.get("quickActions");
+      body = {
+        step:         formData.get("step")     as string ?? undefined,
+        botName:      formData.get("botName")  as string ?? undefined,
+        greeting:     formData.get("greeting") as string ?? undefined,
+        tone:         formData.get("tone")     as string ?? undefined,
+        host:         formData.get("host")     as string ?? undefined,
+        quickActions: rawQuickActions
+          ? JSON.parse(rawQuickActions as string)
+          : undefined,
+      };
+    } else {
+      // JSON body (sent by fetch() from client)
+      body = await request.json() as typeof body;
+      console.log("[save action] Form data:", body);
+    }
 
     const step = String(body.step ?? "");
     const host = String(body.host ?? "");
@@ -85,6 +108,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       });
 
       console.log("[app.setup.save] ✅ Step 1 saved");
+      console.log("[save action] SAVE SUCCESS - returning json");
       return jsonResponse({ success: true, step: 1 });
     }
 
@@ -105,6 +129,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       });
 
       console.log("[app.setup.save] ✅ Step 2 saved");
+      console.log("[save action] SAVE SUCCESS - returning json");
       return jsonResponse({ success: true, step: 2 });
     }
 
@@ -119,6 +144,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       });
 
       console.log("[app.setup.save] ✅ Step 3 saved — setup complete");
+      console.log("[save action] SAVE SUCCESS - returning json");
       return jsonResponse({ success: true, step: 3 });
     }
 
@@ -128,6 +154,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     const errorStack = err instanceof Error ? err.stack : "no stack";
+    console.error("[save action] CRASH:", err);
     console.error("[app.setup.save] ===== CRASH IN ACTION =====");
     console.error("[app.setup.save] Error message:", errorMsg);
     console.error("[app.setup.save] Error stack:", errorStack);
