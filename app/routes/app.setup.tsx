@@ -235,6 +235,77 @@ export default function SetupWizard() {
                     <p className="text-xs text-muted-foreground mt-1">
                       This affects how the AI responds to customer questions
                     </p>
+
+                    {/* ── Tone preview examples ── */}
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {[
+                        {
+                          value:   "friendly",
+                          label:   "Friendly",
+                          color:   "#008060",
+                          bg:      "hsl(160 100% 97%)",
+                          border:  "#008060",
+                          example: "Hey there! 😊 What's up? Ready to find something awesome today?",
+                        },
+                        {
+                          value:   "professional",
+                          label:   "Professional",
+                          color:   "#1d4ed8",
+                          bg:      "hsl(220 100% 97%)",
+                          border:  "#1d4ed8",
+                          example: "Hello! How may I assist you today? I'm here to help with your order or questions.",
+                        },
+                        {
+                          value:   "casual",
+                          label:   "Casual",
+                          color:   "#7c3aed",
+                          bg:      "hsl(260 100% 97%)",
+                          border:  "#7c3aed",
+                          example: "Yo! What's good? Need help finding something cool?",
+                        },
+                      ].map((ex) => (
+                        <button
+                          key={ex.value}
+                          type="button"
+                          onClick={() => setTone(ex.value)}
+                          style={{
+                            background:   ex.bg,
+                            border:       `1.5px solid ${tone === ex.value ? ex.color : "hsl(210 10% 88%)"}`,
+                            borderRadius: 10,
+                            padding:      "10px 12px",
+                            textAlign:    "left",
+                            cursor:       "pointer",
+                            transition:   "border-color 0.15s, box-shadow 0.15s",
+                            boxShadow:    tone === ex.value ? `0 0 0 3px ${ex.color}22` : "none",
+                          }}
+                        >
+                          {/* Widget header strip */}
+                          <div
+                            style={{
+                              background:   ex.color,
+                              borderRadius: "6px 6px 0 0",
+                              padding:      "4px 8px",
+                              marginBottom: 6,
+                              display:      "flex",
+                              alignItems:   "center",
+                              gap:          6,
+                            }}
+                          >
+                            <div style={{ width: 14, height: 14, borderRadius: "50%", background: "rgba(255,255,255,0.9)", flexShrink: 0 }} />
+                            <span style={{ fontSize: 10, fontWeight: 700, color: "#fff", letterSpacing: "0.02em" }}>
+                              {ex.label}
+                            </span>
+                          </div>
+                          {/* Example bubble */}
+                          <p style={{ margin: 0, fontSize: 11, color: "hsl(208 5% 40%)", fontStyle: "italic", lineHeight: 1.45 }}>
+                            "{ex.example}"
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1.5">
+                      Click a card to select that tone
+                    </p>
                   </div>
                 </div>
               )}
