@@ -165,16 +165,23 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     let quickActions: string[] = [];
     try { quickActions = JSON.parse(quickActionsRaw); } catch { quickActions = []; }
 
+    // Preserve the Shopify `host` param in the redirect so App Bridge can
+    // re-authenticate the embedded iframe (without it the browser gets
+    // redirected to /auth/login immediately after the 302).
+    const reqUrl = new URL(request.url);
+    const hostParam = reqUrl.searchParams.get("host") || "";
+    const dashboardUrl = hostParam ? `/app?host=${encodeURIComponent(hostParam)}` : "/app";
+
     try {
       await prisma.shopSettings.update({
         where:  { shop },
         data:   { botName, greeting, tone, quickActions, setupCompleted: true, lastActiveAt: new Date() },
       });
       console.log(`[app._index action] ✅ setup_complete saved for ${shop}`);
-      return redirect("/app");
+      return redirect(dashboardUrl);
     } catch (err) {
       console.error("[app._index action] ❌ setup_complete error:", err instanceof Error ? err.message : String(err));
-      return redirect("/app?setup_error=1");
+      return redirect(`${dashboardUrl}&setup_error=1`);
     }
   }
 

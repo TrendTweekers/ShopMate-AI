@@ -84,6 +84,11 @@ export default function ChatWidget({ shop, botName = "ShopMate AI", greeting = "
     if (saved) setConversationId(saved);
   }, []);
 
+  // Re-sync greeting when the prop changes (used by the admin wizard live preview)
+  useEffect(() => {
+    setMessages([{ role: "bot", text: greeting }]);
+  }, [greeting]);
+
   // Scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -211,7 +216,7 @@ export default function ChatWidget({ shop, botName = "ShopMate AI", greeting = "
               {view === "home" && (
                 <div className="space-y-4 animate-fade-in">
                   <div className="bg-muted rounded-lg p-3">
-                    <p className="text-sm text-foreground">Hi! 👋 How can I help you today?</p>
+                    <p className="text-sm text-foreground">{greeting}</p>
                   </div>
 
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
