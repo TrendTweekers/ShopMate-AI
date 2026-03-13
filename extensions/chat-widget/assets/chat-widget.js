@@ -2,8 +2,10 @@
  * ShopMate AI — Storefront Chat Widget
  * Pure vanilla JS/CSS-in-JS. No build step required.
  * Reads config from window.ShopMateConfig injected by chat-widget.liquid.
+ * On init, fetches real merchant settings from /apps/shopmate/settings
+ * so botName, greeting and quickActions always reflect the dashboard values.
  */
-(function () {
+(async function () {
   "use strict";
 
   // ── Double-injection guard ──────────────────────────────────────────────
@@ -34,17 +36,44 @@
     return "#" + [r,g,b].map(function(x){ return x.toString(16).padStart(2,"0"); }).join("");
   }
   var ACCENT = darkenHex(PRIMARY, 24); // ~15% darker for gradient end-stop
-  const BOT_NAME = cfg.botName || "ShopMate";
+  // These are `let` so the DB-settings fetch below can override them.
+  let BOT_NAME     = cfg.botName  || "ShopMate";
   // Logo URL injected by chat-widget.liquid via {{ 'shopmatelogo.png' | asset_url | json }}
-  const LOGO_URL = cfg.logoUrl || "";
-  const GREETING = cfg.greeting || "Hi! \uD83D\uDC4B How can I help you today?";
+  const LOGO_URL   = cfg.logoUrl  || "";
+  let GREETING     = cfg.greeting || "Hi! \uD83D\uDC4B How can I help you today?";
   const SESSION_KEY = "shopmate_conv_id";
-  // Quick-reply chips shown below the greeting until the user sends their first message.
-  // Merchants can override via ShopMateConfig.quickReplies (array of strings).
-  // Pass an empty array [] to disable chips entirely.
-  const QUICK_REPLIES = Array.isArray(cfg.quickReplies)
+  // Quick-reply chips — will be overridden by DB settings below.
+  let QUICK_REPLIES = Array.isArray(cfg.quickReplies)
     ? cfg.quickReplies
-    : ["Track my order", "Recommend a product", "What's your return policy?", "Talk to a human"];
+    : ["Track my order", "Product recommendations", "Returns & exchanges"];
+
+  // ── Fetch real merchant settings from the DB ──────────────────────────────
+  // /apps/shopmate/settings is a public App Proxy route served by Railway.
+  // This overwrites the Shopify theme-editor defaults with the merchant's
+  // saved dashboard values (botName, greeting, tone, quickActions).
+  if (SHOP) {
+    try {
+      const settingsRes = await fetch(
+        "/apps/shopmate/settings?shop=" + encodeURIComponent(SHOP),
+        { headers: { Accept: "application/json" } }
+      );
+      if (settingsRes.ok) {
+        const s = await settingsRes.json();
+        if (s.widgetEnabled === false) {
+          console.log("[ShopMate] Widget is disabled for this shop — not rendering.");
+          return;
+        }
+        if (s.botName)  BOT_NAME     = s.botName;
+        if (s.greeting) GREETING     = s.greeting;
+        if (Array.isArray(s.quickActions) && s.quickActions.length > 0) {
+          QUICK_REPLIES = s.quickActions;
+        }
+        console.log("[ShopMate] Settings loaded from DB:", { botName: BOT_NAME, greeting: GREETING });
+      }
+    } catch (settingsErr) {
+      console.warn("[ShopMate] Could not load DB settings, using theme defaults:", settingsErr);
+    }
+  }
   // Always relative so Shopify's proxy adds the HMAC signature.
   // API_BASE is "" — kept for backward compat if someone sets it.
   const API_URL   = API_BASE + "/apps/shopmate/chat";

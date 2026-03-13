@@ -389,7 +389,11 @@ export default function SetupWizard() {
                     </div>
                   </div>
                   <div style={{ position: "absolute", bottom: 0, left: 0, right: 0 }}>
-                    <ChatWidget shop={loaderData.shop} />
+                    <ChatWidget
+                      shop={loaderData.shop}
+                      botName={botName || "ShopMate AI"}
+                      greeting={greeting}
+                    />
                   </div>
                 </div>
               </div>

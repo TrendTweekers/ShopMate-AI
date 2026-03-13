@@ -485,10 +485,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     extraContextForAI = extraContext;
   }
 
+  // Use merchant-configured values from DB (set on line ~314 via prisma.shopSettings.upsert)
+  const botNameForPrompt = settings.botName?.trim() || "ShopMate";
+  const toneForPrompt    = (settings.tone?.trim()    || "Friendly").toLowerCase();
+
   const systemPrompt = isRecommendQuickAction
-    ? `You are ShopMate, a helpful AI assistant. The customer wants product recommendations. Ask them ONE short question: "What are you looking for? I can help you find the right product." Do not ask about budget, who it is for, or anything else. Keep it brief and friendly.`
+    ? `You are ${botNameForPrompt}, a helpful AI assistant. The customer wants product recommendations. Ask them ONE short question: "What are you looking for? I can help you find the right product." Do not ask about budget, who it is for, or anything else. Keep it brief and ${toneForPrompt}.`
     : [
-        `You are ShopMate, a helpful AI assistant for the Shopify store ${shop}. Help customers with order tracking, product recommendations, returns, and general questions. Be friendly, concise, and helpful.`,
+        `You are ${botNameForPrompt}, a helpful AI assistant for the Shopify store ${shop}. Help customers with order tracking, product recommendations, returns, and general questions. Respond in a ${toneForPrompt} tone. Be concise and helpful.`,
         kbContext,
         `\n── PRODUCT INFORMATION ──\nWhen product information is provided below, use it directly to answer customer questions about products. Do NOT tell customers you don't have access to the catalog — you have what's listed below.`,
         extraContextForAI ? `\nLIVE ORDER/PRODUCT CONTEXT:\n${extraContextForAI}` : "\nNo product information is currently available.",

@@ -21,6 +21,10 @@ interface Message {
 
 interface ChatWidgetProps {
   shop?: string;
+  /** Override the bot display name (from setup wizard / dashboard settings) */
+  botName?: string;
+  /** Override the initial greeting message */
+  greeting?: string;
 }
 
 const SESSION_KEY = "shopmate_conversation_id";
@@ -61,11 +65,11 @@ function ProductCard({ product }: { product: Product }) {
   );
 }
 
-export default function ChatWidget({ shop }: ChatWidgetProps) {
+export default function ChatWidget({ shop, botName = "ShopMate AI", greeting = "Hi! 👋 How can I help you today?" }: ChatWidgetProps) {
   const [open, setOpen] = useState(true);
   const [view, setView] = useState<View>("home");
   const [messages, setMessages] = useState<Message[]>([
-    { role: "bot", text: "Hi! 👋 I'm ShopMate. How can I help you today?" },
+    { role: "bot", text: greeting },
   ]);
   const [input, setInput] = useState("");
   const [orderNumber, setOrderNumber] = useState("");
@@ -190,7 +194,7 @@ export default function ChatWidget({ shop }: ChatWidgetProps) {
                   <span className="text-xs font-bold text-primary">SM</span>
                 </div>
                 <div>
-                  <p className="text-sm font-bold text-primary-foreground">ShopMate AI</p>
+                  <p className="text-sm font-bold text-primary-foreground">{botName}</p>
                   <p className="text-[10px] text-primary-foreground/80">Shop Assistant</p>
                 </div>
               </div>
