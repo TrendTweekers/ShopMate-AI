@@ -131,13 +131,36 @@ export default function SetupWizard() {
   const handleNext = () => setCurrentStep((prev) => prev + 1);
   const handleBack = () => setCurrentStep((prev) => Math.max(0, prev - 1));
 
-  // Step 3 — navigate to dashboard via full-page navigation (bypasses iframe CSP)
-  // Settings are saved there via a native <form> POST that works reliably.
-  function goToDashboard() {
-    // Preserve Shopify query params so authenticate.admin() works on the dashboard
-    const current = new URL(window.location.href);
-    current.pathname = "/app";
-    window.location.href = current.toString();
+  // Step 3 — submit all wizard state as a hidden form POST to /app
+  // Native form POST bypasses Shopify iframe CSP; the /app action's
+  // "setup_complete" intent saves everything to DB and redirects back to /app.
+  function saveAndGoToDashboard() {
+    const form = document.createElement("form");
+    form.method = "POST";
+
+    // Preserve Shopify query params on the action URL so authenticate.admin() works
+    const target = new URL(window.location.href);
+    target.pathname = "/app";
+    form.action = target.toString();
+
+    const fields: Record<string, string> = {
+      intent:       "setup_complete",
+      botName:      botName.trim()  || "ShopMate",
+      greeting:     greeting.trim() || "Hi! 👋 How can I help you today?",
+      tone:         tone             || "friendly",
+      quickActions: JSON.stringify(quickActions),
+    };
+
+    for (const [name, value] of Object.entries(fields)) {
+      const input    = document.createElement("input");
+      input.type     = "hidden";
+      input.name     = name;
+      input.value    = value;
+      form.appendChild(input);
+    }
+
+    document.body.appendChild(form);
+    form.submit();
   }
 
   return (
@@ -370,10 +393,10 @@ export default function SetupWizard() {
                     </button>
                     <button
                       type="button"
-                      onClick={goToDashboard}
+                      onClick={saveAndGoToDashboard}
                       className="px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-md text-sm font-medium transition-colors flex items-center gap-1"
                     >
-                      Go to Dashboard <ArrowRight className="w-4 h-4" />
+                      Save &amp; Go to Dashboard <ArrowRight className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
