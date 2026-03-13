@@ -107,7 +107,13 @@ export default function SetupWizard() {
   const [botName,      setBotName]      = useState(loaderData.botName);
   const [greeting,     setGreeting]     = useState(loaderData.greeting);
   const [tone,         setTone]         = useState(loaderData.tone);
-  const [quickActions, setQuickActions] = useState<string[]>(loaderData.quickActions);
+  // Only keep labels that exist in ALL_QUICK_ACTIONS to prevent stale/legacy
+  // DB values (e.g. "Track order", "Talk to human") from appearing as duplicates.
+  const [quickActions, setQuickActions] = useState<string[]>(
+    loaderData.quickActions.filter((a) =>
+      ALL_QUICK_ACTIONS.some((q) => q.label === a)
+    )
+  );
 
   const shopify = useAppBridge();
 
@@ -131,39 +137,28 @@ export default function SetupWizard() {
   const handleNext = () => setCurrentStep((prev) => prev + 1);
   const handleBack = () => setCurrentStep((prev) => Math.max(0, prev - 1));
 
-  // Step 3 — submit all wizard state as a hidden form POST to /app
-  // Native form POST bypasses Shopify iframe CSP; the /app action's
-  // "setup_complete" intent saves everything to DB and redirects back to /app.
+  // Step 3 — navigate to /app with wizard values as GET params.
+  //
+  // Why GET instead of POST?
+  //   POST body is consumed by Shopify's auth-session-token redirect (302 in ~7ms)
+  //   before the action ever reads it → data permanently lost.
+  //   GET URL params survive Shopify's redirect dance intact, so the loader
+  //   can read them after authenticate.admin() succeeds.
   function saveAndGoToDashboard() {
-    const form = document.createElement("form");
-    form.method = "POST";
-
-    // Preserve Shopify query params on the action URL so authenticate.admin() works.
-    // Set ?index so React Router routes the POST to app._index.tsx's action —
-    // without it, the POST goes to the layout route app.tsx which has no action (405).
     const target = new URL(window.location.href);
     target.pathname = "/app";
-    target.searchParams.set("index", "");
-    form.action = target.toString();
 
-    const fields: Record<string, string> = {
-      intent:       "setup_complete",
-      botName:      botName.trim()  || "ShopMate",
-      greeting:     greeting.trim() || "Hi! 👋 How can I help you today?",
-      tone:         tone             || "friendly",
-      quickActions: JSON.stringify(quickActions),
-    };
+    // Remove any leftover routing markers
+    target.searchParams.delete("index");
 
-    for (const [name, value] of Object.entries(fields)) {
-      const input    = document.createElement("input");
-      input.type     = "hidden";
-      input.name     = name;
-      input.value    = value;
-      form.appendChild(input);
-    }
+    // Embed wizard values in URL (short param names to keep URL compact)
+    target.searchParams.set("wizard_save", "1");
+    target.searchParams.set("wbn", botName.trim()  || "ShopMate");
+    target.searchParams.set("wgr", greeting.trim() || "Hi! 👋 How can I help you today?");
+    target.searchParams.set("wtn", tone            || "friendly");
+    target.searchParams.set("wqa", JSON.stringify(quickActions));
 
-    document.body.appendChild(form);
-    form.submit();
+    window.location.href = target.toString();
   }
 
   return (

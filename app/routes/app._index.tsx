@@ -197,8 +197,45 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session, billing } = await authenticate.admin(request);
   const shop = session.shop;
 
-  // Check for feedback success parameter from redirect
   const url = new URL(request.url);
+
+  // ── Wizard save (GET params survive Shopify's auth-session-token redirect) ──
+  // When the merchant clicks "Save & Go to Dashboard" in the setup wizard,
+  // we navigate here with wizard_save=1 + encoded values in the URL.
+  // We save to DB here in the loader (runs after auth) then redirect to a
+  // clean URL so refreshing the page doesn't re-save.
+  if (url.searchParams.get("wizard_save") === "1") {
+    const wbn = (url.searchParams.get("wbn") || "ShopMate").trim();
+    const wgr = (url.searchParams.get("wgr") || "Hi! 👋 How can I help you today?").trim();
+    const wtn = (url.searchParams.get("wtn") || "friendly").trim();
+    const wqaRaw = url.searchParams.get("wqa") || "[]";
+    let wqa: string[] = [];
+    try { wqa = JSON.parse(wqaRaw); } catch { wqa = []; }
+
+    console.log(`[app._index loader] wizard_save for ${shop}:`, { wbn, wgr, wtn, wqa });
+
+    try {
+      await prisma.shopSettings.upsert({
+        where:  { shop },
+        create: { shop, botName: wbn, greeting: wgr, tone: wtn, quickActions: wqa, setupCompleted: true, lastActiveAt: new Date() },
+        update: { botName: wbn, greeting: wgr, tone: wtn, quickActions: wqa, setupCompleted: true, lastActiveAt: new Date() },
+      });
+      console.log(`[app._index loader] ✅ wizard_save saved for ${shop}`);
+    } catch (err) {
+      console.error("[app._index loader] ❌ wizard_save error:", err instanceof Error ? err.message : String(err));
+    }
+
+    // Redirect to clean URL (strip wizard params so a refresh doesn't re-save)
+    const cleanUrl = new URL(url.toString());
+    cleanUrl.searchParams.delete("wizard_save");
+    cleanUrl.searchParams.delete("wbn");
+    cleanUrl.searchParams.delete("wgr");
+    cleanUrl.searchParams.delete("wtn");
+    cleanUrl.searchParams.delete("wqa");
+    return redirect(cleanUrl.toString());
+  }
+
+  // Check for feedback success parameter from redirect
   const feedbackSuccess = url.searchParams.has("feedback") && url.searchParams.get("feedback") === "success";
 
   // ── Billing check ──
