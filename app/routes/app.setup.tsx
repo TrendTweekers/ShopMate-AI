@@ -138,9 +138,12 @@ export default function SetupWizard() {
     const form = document.createElement("form");
     form.method = "POST";
 
-    // Preserve Shopify query params on the action URL so authenticate.admin() works
+    // Preserve Shopify query params on the action URL so authenticate.admin() works.
+    // Set ?index so React Router routes the POST to app._index.tsx's action —
+    // without it, the POST goes to the layout route app.tsx which has no action (405).
     const target = new URL(window.location.href);
     target.pathname = "/app";
+    target.searchParams.set("index", "");
     form.action = target.toString();
 
     const fields: Record<string, string> = {
