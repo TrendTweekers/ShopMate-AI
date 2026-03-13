@@ -1,12 +1,10 @@
-import { useState, useEffect, useRef } from "react";
-import type { LoaderFunctionArgs } from "react-router";
-import { useLoaderData, redirect, useFetcher } from "react-router";
+import { useState, useEffect } from "react";
+import type { LoaderFunctionArgs, HeadersFunction } from "react-router";
+import { useLoaderData, redirect } from "react-router";
 import AdminLayout from "~/components/admin/AdminLayout";
 import ChatWidget from "~/components/storefront/ChatWidget";
 import { Check, ArrowRight, ArrowLeft, Bot, Sparkles } from "lucide-react";
 import { useAppBridge } from "@shopify/app-bridge-react";
-import { getSessionToken } from "@shopify/app-bridge-utils";
-import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -24,7 +22,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     host: hostParam ? "yes" : "no",
     idToken: idTokenParam ? "yes" : "no",
     savedParam,
-    savedParamType: typeof savedParam,
     error: error || "none",
   });
 
@@ -76,19 +73,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     throw redirect("/auth/login");
   }
 
-  // Success! We have shop from either auth or fallback
   console.log(`[app.setup] ✓ Shop identified: ${shop} (from ${authSource})`);
 
   // Load settings from database
-  console.log(`[app.setup] Loading settings from DB for shop: ${shop}`);
   const settings = await prisma.shopSettings.upsert({
     where: { shop },
     create: { shop, lastActiveAt: new Date() },
     update: { lastActiveAt: new Date() },
   });
 
-  // Return all data needed by component
-  // Parse saved as a number, or null if not present
   const savedNumber = savedParam ? parseInt(savedParam, 10) : null;
 
   const loaderData = {
@@ -100,17 +93,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     saved: savedNumber,
     error,
     host: hostParam,
-    idToken: idTokenParam, // Preserve id_token for next redirects
+    idToken: idTokenParam,
   };
 
-  console.log(`[app.setup] ✓ Loader completed:`, {
-    shop: loaderData.shop,
-    saved: loaderData.saved,
-    savedType: typeof loaderData.saved,
-    savedParam,
-    host: hostParam ? "✓" : "✗",
-    idToken: idTokenParam ? "✓" : "✗",
-  });
+  console.log(`[app.setup] ✓ Loader completed: shop=${loaderData.shop}, saved=${loaderData.saved}`);
   return loaderData;
 };
 
@@ -130,130 +116,99 @@ const toneOptions = [
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function SetupWizard() {
   const loaderData = useLoaderData<typeof loader>();
-  const { host, idToken, saved } = loaderData;
+  const { host, error } = loaderData;
   const [currentStep, setCurrentStep] = useState(0);
   const [botName, setBotName] = useState(loaderData.botName);
   const [greeting, setGreeting] = useState(loaderData.greeting);
   const [tone, setTone] = useState(loaderData.tone);
   const [quickActions, setQuickActions] = useState(loaderData.quickActions);
+  const [isSaving, setIsSaving] = useState(false);
   const shopify = useAppBridge();
-  const fetcher = useFetcher<{ saved?: number }>();
 
-  // 🔍 Handle form submission response (from useFetcher)
+  // ── Show error toast if loader detected an error ──
   useEffect(() => {
-    console.log("[fetcher] state changed to:", fetcher.state, "data:", fetcher.data);
-
-    if (fetcher.state === "idle" && fetcher.data?.saved) {
-      console.log("[fetcher] SUCCESS - processing saved step:", fetcher.data.saved);
-
-      shopify?.toast?.show?.("✅ Saved!", { duration: 2000 });
-
-      getSessionToken(shopify)
-        .then((token) => {
-          console.log("[fetcher] Session refreshed:", token.substring(0, 20) + "...");
-        })
-        .catch((err) => {
-          console.error("[fetcher] Refresh failed:", err?.message);
-        });
-
-      setCurrentStep((prev) => prev + 1);
-    }
-
-    // Safety reset if stuck in submitting > 5 seconds
-    if (fetcher.state === "submitting") {
-      const timer = setTimeout(() => {
-        console.warn("[fetcher] WARNING: Still submitting after 5s - check server logs");
-      }, 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [fetcher.state, fetcher.data, shopify]);
-
-  // ── MOUNT: Force refresh Shopify session on initial load ──
-  useEffect(() => {
-    try {
-      console.log("[SetupWizard] 📍 useEffect(mount) - shopify instance:", {
-        exists: !!shopify,
-        type: typeof shopify,
-        hasWebApi: shopify && !!shopify.webApi,
-        hasSubscribe: shopify && !!shopify.webApi?.subscribe,
-      });
-
-      if (!shopify) {
-        console.error("[SetupWizard] 📍 useEffect(mount): shopify is null/undefined!");
-        return;
-      }
-
-      // Use polling to wait for App Bridge to initialize
-      const initializeSession = async () => {
-        console.log("[SetupWizard] 📍 useEffect(mount): ⏳ Waiting for App Bridge to initialize...");
-        try {
-          await waitForAppBridge(2000);
-        } catch (waitError) {
-          console.warn("[SetupWizard] 📍 useEffect(mount): App Bridge not ready yet, skipping initial session refresh");
-          return;
-        }
-
-        console.log("[SetupWizard] 📍 useEffect(mount): App Bridge ready, calling getSessionToken...");
-        let tokenPromise;
-        try {
-          tokenPromise = getSessionToken(shopify);
-          console.log("[SetupWizard] 📍 useEffect(mount) - getSessionToken call succeeded");
-        } catch (callError) {
-          console.error("[SetupWizard] 📍 useEffect(mount) - getSessionToken threw during call:", {
-            message: callError instanceof Error ? callError.message : String(callError),
-            stack: callError instanceof Error ? callError.stack : "no stack",
-          });
-          return;
-        }
-
-        tokenPromise
-          .then((token) => {
-            console.log("[SetupWizard] ✅ useEffect(mount) - session token obtained:", {
-              hasToken: !!token,
-              length: token?.length || 0,
-              preview: token ? token.substring(0, 20) + "..." : "empty",
-            });
-          })
-          .catch((error) => {
-            console.error("[SetupWizard] ❌ useEffect(mount) - session token failed:", {
-              message: error?.message || String(error),
-              stack: error?.stack || "no stack",
-              error,
-            });
-          });
-      };
-
-      initializeSession();
-    } catch (err) {
-      console.error("[SetupWizard] 📍 useEffect(mount) - Exception:", {
-        message: err instanceof Error ? err.message : String(err),
-        stack: err instanceof Error ? err.stack : "no stack",
-      });
-    }
-  }, [shopify]);
-
-  // ── Show error toast if something went wrong ──
-  useEffect(() => {
-    if (loaderData.error) {
+    if (error) {
       const errorMessages: Record<string, string> = {
-        "save_failed": "Error saving settings. Please try again.",
-        "no_actions": "Please select at least one quick action.",
-        "invalid_method": "Invalid request.",
-        "unknown_step": "Unknown step.",
+        save_failed: "Error saving settings. Please try again.",
+        no_actions: "Please select at least one quick action.",
+        invalid_method: "Invalid request.",
+        unknown_step: "Unknown step.",
       };
-      shopify.toast.show(`❌ ${errorMessages[loaderData.error] || "Error"}`, { duration: 3000 });
-      // Clear error param from URL
+      shopify.toast.show(`❌ ${errorMessages[error] || "Error"}`, { duration: 3000 });
       const url = new URL(window.location.href);
       url.searchParams.delete("error");
       window.history.replaceState({}, "", url.toString());
     }
-  }, [loaderData.error, shopify]);
+  }, [error, shopify]);
 
   const handleQuickActionToggle = (action: string) => {
     if (quickActions.includes(action)) {
       setQuickActions(quickActions.filter((a) => a !== action));
     } else {
       setQuickActions([...quickActions, action]);
+    }
+  };
+
+  // ── Core save handler — direct fetch(), no useFetcher ──
+  const handleNext = async () => {
+    if (isSaving) return;
+    if (currentStep === 0 && (!botName.trim() || !greeting.trim())) return;
+    if (currentStep === 1 && quickActions.length === 0) return;
+
+    setIsSaving(true);
+    console.log("[handleNext] Saving step:", currentStep + 1);
+
+    try {
+      let body: Record<string, unknown>;
+      if (currentStep === 0) {
+        body = {
+          step: 1,
+          botName: botName.trim(),
+          greeting: greeting.trim(),
+          tone: tone.charAt(0).toUpperCase() + tone.slice(1),
+          host: host || "",
+        };
+      } else if (currentStep === 1) {
+        body = { step: 2, quickActions, host: host || "" };
+      } else {
+        body = { step: 3, host: host || "" };
+      }
+
+      console.log("[handleNext] POST /app/setup/save →", body);
+
+      const response = await fetch("/app/setup/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      console.log("[handleNext] Response status:", response.status);
+      const data = await response.json();
+      console.log("[handleNext] Response data:", data);
+
+      if (response.ok && data.success) {
+        shopify?.toast?.show?.("✅ Saved!", { duration: 2000 });
+        if (currentStep === 2) {
+          // Wizard complete — navigate to dashboard
+          window.location.href = "/app";
+        } else {
+          setCurrentStep((prev) => prev + 1);
+        }
+      } else {
+        const errorMessages: Record<string, string> = {
+          no_actions: "Please select at least one quick action.",
+          save_failed: "Error saving. Please try again.",
+          unknown_step: "Unknown step.",
+        };
+        const msg = errorMessages[data.error] || "Save failed. Please try again.";
+        console.error("[handleNext] Server error:", data);
+        shopify?.toast?.show?.(`❌ ${msg}`, { duration: 3000 });
+      }
+    } catch (err) {
+      console.error("[handleNext] Network error:", err);
+      shopify?.toast?.show?.("❌ Network error. Please try again.", { duration: 3000 });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -277,7 +232,7 @@ export default function SetupWizard() {
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: 24, alignItems: "start" }}>
-          {/* Left: Wizard Form (65%) */}
+          {/* Left: Wizard Form */}
           <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
             {/* Progress */}
             <div className="polaris-card">
@@ -310,23 +265,13 @@ export default function SetupWizard() {
             </div>
 
             {/* Step Content */}
-            <fetcher.Form
-              method="post"
-              action="/app/setup/save"
-              className="polaris-card animate-fade-in"
-              key={currentStep}
-            >
-              {/* Preserve Shopify host param */}
-              <input type="hidden" name="host" value={host || ""} />
-              <input type="hidden" name="step" value={String(currentStep + 1)} />
-
+            <div className="polaris-card animate-fade-in" key={currentStep}>
               {/* Step 1: Customize */}
               {currentStep === 0 && (
                 <div className="space-y-5">
                   <div>
                     <label className="text-sm font-semibold text-foreground block mb-2">Bot Name</label>
                     <Input
-                      name="botName"
                       value={botName}
                       onChange={(e) => setBotName(e.target.value)}
                       placeholder="ShopMate"
@@ -339,7 +284,6 @@ export default function SetupWizard() {
                   <div>
                     <label className="text-sm font-semibold text-foreground block mb-2">Greeting Message</label>
                     <Input
-                      name="greeting"
                       value={greeting}
                       onChange={(e) => setGreeting(e.target.value)}
                       placeholder="Hi! 👋 How can I help you today?"
@@ -367,7 +311,6 @@ export default function SetupWizard() {
                         </button>
                       ))}
                     </div>
-                    <input type="hidden" name="tone" value={tone.charAt(0).toUpperCase() + tone.slice(1)} />
                     <p className="text-xs text-muted-foreground mt-1">
                       This affects how the AI responds to customer questions
                     </p>
@@ -405,8 +348,6 @@ export default function SetupWizard() {
                       </button>
                     ))}
                   </div>
-                  {/* Hidden input for form submission */}
-                  <input type="hidden" name="quickActions" value={JSON.stringify(quickActions)} />
                   {quickActions.length === 0 && (
                     <p className="text-xs text-destructive">
                       Please select at least one quick action
@@ -431,44 +372,36 @@ export default function SetupWizard() {
                 </div>
               )}
 
-              {/* Navigation - INSIDE FORM so submit button works */}
+              {/* Navigation */}
               <div className="flex justify-between gap-2 mt-6">
                 <button
                   type="button"
                   onClick={() => setCurrentStep(Math.max(0, currentStep - 1))}
-                  disabled={currentStep === 0}
+                  disabled={currentStep === 0 || isSaving}
                   className="px-4 py-2 border border-border text-foreground hover:bg-muted rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
                 >
                   <ArrowLeft className="w-4 h-4 mr-1" /> Back
                 </button>
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={handleNext}
                   disabled={
-                    fetcher.state !== "idle" ||
+                    isSaving ||
                     (currentStep === 0 && (!botName.trim() || !greeting.trim())) ||
                     (currentStep === 1 && quickActions.length === 0)
                   }
                   className="px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
                 >
                   {currentStep === 2
-                    ? fetcher.state !== "idle"
-                      ? "Completing…"
-                      : "Go to Dashboard"
-                    : fetcher.state !== "idle"
-                    ? "Saving…"
-                    : "Next"}
+                    ? isSaving ? "Completing…" : "Go to Dashboard"
+                    : isSaving ? "Saving…" : "Next"}
                   {currentStep < 2 && <ArrowRight className="w-4 h-4" />}
                 </button>
               </div>
-
-              {/* DEBUG: Show fetcher state and data */}
-              <div style={{ marginTop: "10px", padding: "8px", backgroundColor: "#f0f0f0", borderRadius: "4px", fontSize: "12px", fontFamily: "monospace", color: "#333" }}>
-                Fetcher state: <strong>{fetcher.state}</strong> | Data: <strong>{JSON.stringify(fetcher.data)}</strong>
-              </div>
-            </fetcher.Form>
+            </div>
           </div>
 
-          {/* Right: Live Widget Preview (35%) - Fixed Sidebar */}
+          {/* Right: Live Widget Preview — Fixed Sidebar */}
           <div style={{ position: "sticky", top: 20, height: "fit-content" }}>
             <div className="polaris-card p-4">
               <h4 className="text-sm font-semibold text-foreground mb-3">Live Preview</h4>
@@ -517,7 +450,6 @@ export default function SetupWizard() {
                     overflow: "hidden",
                   }}
                 >
-                  {/* Fake store content */}
                   <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 12, marginBottom: 64 }}>
                     <div style={{ height: 16, width: 80, backgroundColor: "hsl(0 0% 92%)", borderRadius: 4 }} />
                     <div
@@ -539,7 +471,7 @@ export default function SetupWizard() {
                     </div>
                   </div>
 
-                  {/* Widget overlay — docked at bottom */}
+                  {/* Widget overlay */}
                   <div style={{ position: "absolute", bottom: 0, left: 0, right: 0 }}>
                     <ChatWidget shop={loaderData.shop} />
                   </div>

@@ -3,7 +3,6 @@ import { redirect } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "~/db.server";
 
-// Helper to create JSON response for useFetcher
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -15,149 +14,124 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   console.log("[app.setup.save] ===== ACTION START =====");
 
   if (request.method !== "POST") {
-    console.log("[app.setup.save] ❌ Non-POST request received:", request.method);
-    return redirect("/app/setup?error=invalid_method");
+    return jsonResponse({ error: "invalid_method" }, 405);
   }
 
-  console.log("[app.setup.save] 🔷 POST request received from:", request.url);
+  console.log("[app.setup.save] POST received, Content-Type:", request.headers.get("content-type"));
 
   try {
-    // OUTER try to catch ANY error in the entire action
-    const formData = await request.formData();
-    const step = formData.get("step") as string;
-    const url = new URL(request.url);
+    // Parse JSON body (sent by direct fetch() from the client)
+    const body = await request.json() as {
+      step?: number | string;
+      botName?: string;
+      greeting?: string;
+      tone?: string;
+      quickActions?: string[];
+      host?: string;
+    };
 
-    console.log("[app.setup.save] 📋 Form data received - step:", step, "URL:", request.url);
+    const step = String(body.step ?? "");
+    const host = String(body.host ?? "");
 
-    // Get host from multiple sources (form data or URL query params)
-    let host = formData.get("host") as string;
-    if (!host) {
-      // Fallback to URL query params (in case hidden input wasn't sent)
-      host = url.searchParams.get("host") || "";
-    }
+    console.log("[app.setup.save] Body received - step:", step, "host:", host ? "yes" : "no");
 
-    // Get id_token from URL to preserve Shopify session context through redirects
-    const idToken = url.searchParams.get("id_token") || "";
-    if (idToken) {
-      console.log(`[app.setup.save] Captured id_token from request URL for redirect preservation`);
-    }
-
-    // Get shop identifier from auth or host param fallback
+    // ── Resolve shop from auth session or host param fallback ──
     let shop: string = "";
     let authSource = "none";
 
-    // Try standard auth first
     try {
       const { session } = await authenticate.admin(request);
       shop = session.shop;
       authSource = "auth";
       console.log(`[app.setup.save] Auth source: ${authSource} → ${shop}`);
     } catch (authError) {
-      // Auth failed, try fallback with host param
+      // Auth failed — try host param fallback
       if (host) {
         try {
-          // Try to decode as base64
           const decoded = Buffer.from(host, "base64").toString("utf-8");
-          // If decoded contains "admin.shopify.com/store/", extract the store name
           if (decoded.includes("admin.shopify.com/store/")) {
             const storeName = decoded.split("admin.shopify.com/store/")[1];
             shop = `${storeName}.myshopify.com`;
             authSource = "base64_host";
-            console.log(`[app.setup.save] Auth source: ${authSource} → ${shop}`);
           } else {
-            // Not admin URL, use host as-is
             shop = host;
             authSource = "raw_host";
-            console.log(`[app.setup.save] Auth source: ${authSource} → ${shop}`);
           }
         } catch {
-          // Not base64 or couldn't decode, use as-is
           shop = host;
           authSource = "raw_host";
-          console.log(`[app.setup.save] Auth source: ${authSource} (not base64) → ${shop}`);
         }
+        console.log(`[app.setup.save] Auth fallback: ${authSource} → ${shop}`);
       }
 
       if (!shop) {
-        console.log(`[app.setup.save] Failed: No shop found (auth failed + no host), redirecting to login`);
-        return redirect("/auth/login");
+        console.log("[app.setup.save] No shop found — auth failed and no host");
+        return jsonResponse({ error: "unauthenticated" }, 401);
       }
     }
 
+    // ── Step 1: Bot name, greeting, tone ──
     if (step === "1") {
-      // ── Step 1: Save bot name, greeting, tone ──
-      const botName = (formData.get("botName") as string)?.trim() || "ShopMate";
-      const greeting = (formData.get("greeting") as string)?.trim() || "Hi! 👋 How can I help you today?";
-      const tone = (formData.get("tone") as string)?.trim() || "Friendly";
+      const botName = (body.botName ?? "ShopMate").trim() || "ShopMate";
+      const greeting = (body.greeting ?? "Hi! 👋 How can I help you today?").trim();
+      const tone = (body.tone ?? "Friendly").trim() || "Friendly";
 
-      console.log("[app.setup.save] 💾 Step 1 - Saving:", { botName, greeting, tone });
+      console.log("[app.setup.save] Saving step 1:", { botName, greeting, tone });
 
-      // Use upsert to create if doesn't exist, update if does
       await prisma.shopSettings.upsert({
         where: { shop },
         update: { botName, greeting, tone, lastActiveAt: new Date() },
         create: { shop, botName, greeting, tone, lastActiveAt: new Date() },
       });
 
-      console.log(`[app.setup.save] ✅ Step 1 saved successfully - RETURNING json({ saved: 1 })`);
-      return jsonResponse({ saved: 1 });
+      console.log("[app.setup.save] ✅ Step 1 saved");
+      return jsonResponse({ success: true, step: 1 });
     }
 
+    // ── Step 2: Quick actions ──
     if (step === "2") {
-      // ── Step 2: Save quick action buttons selection ──
-      const quickActionsStr = formData.get("quickActions") as string;
-      const quickActions = quickActionsStr ? JSON.parse(quickActionsStr) : [];
+      const quickActions = Array.isArray(body.quickActions) ? body.quickActions : [];
 
-      console.log("[app.setup.save] 💾 Step 2 - Saving quick actions:", quickActions);
+      console.log("[app.setup.save] Saving step 2 - quick actions:", quickActions);
 
       if (quickActions.length === 0) {
-        console.log("[app.setup.save] ❌ No quick actions selected");
         return jsonResponse({ error: "no_actions" }, 400);
       }
 
-      // Use upsert to create if doesn't exist, update if does
       await prisma.shopSettings.upsert({
         where: { shop },
         update: { quickActions, lastActiveAt: new Date() },
         create: { shop, quickActions, lastActiveAt: new Date() },
       });
 
-      console.log(`[app.setup.save] ✅ Step 2 saved successfully`);
-      return jsonResponse({ saved: 2 });
+      console.log("[app.setup.save] ✅ Step 2 saved");
+      return jsonResponse({ success: true, step: 2 });
     }
 
+    // ── Step 3: Mark setup complete ──
     if (step === "3") {
-      // ── Step 3: Mark setup as completed ──
-      console.log("[app.setup.save] 💾 Step 3 - Marking setup as completed");
+      console.log("[app.setup.save] Saving step 3 - marking setup complete");
 
-      // Use upsert to create if doesn't exist, update if does
       await prisma.shopSettings.upsert({
         where: { shop },
         update: { setupCompleted: true, lastActiveAt: new Date() },
         create: { shop, setupCompleted: true, lastActiveAt: new Date() },
       });
 
-      console.log(`[app.setup.save] ✅ Setup completed successfully`);
-      // For step 3, redirect to dashboard since the wizard is done
-      const dashboardUrl = new URL("/app", new URL(request.url).origin);
-      if (host) dashboardUrl.searchParams.set("host", host);
-      if (idToken) dashboardUrl.searchParams.set("id_token", idToken);
-      console.log(`[app.setup.save] 🔄 Redirecting to dashboard:`, dashboardUrl.toString());
-      return redirect(dashboardUrl.toString());
+      console.log("[app.setup.save] ✅ Step 3 saved — setup complete");
+      return jsonResponse({ success: true, step: 3 });
     }
 
+    console.log("[app.setup.save] Unknown step:", step);
     return jsonResponse({ error: "unknown_step" }, 400);
+
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     const errorStack = err instanceof Error ? err.stack : "no stack";
-    console.error(`[app.setup.save] ===== CRASH IN ACTION =====`);
-    console.error(`[app.setup.save] Error message:`, errorMsg);
-    console.error(`[app.setup.save] Error stack:`, errorStack);
-    console.error(`[app.setup.save] Error type:`, err?.constructor?.name);
-    console.error(`[app.setup.save] Full error object:`, err);
-
-    // Return error response that useFetcher can deserialize
-    console.error(`[app.setup.save] Returning error response to client`);
+    console.error("[app.setup.save] ===== CRASH IN ACTION =====");
+    console.error("[app.setup.save] Error message:", errorMsg);
+    console.error("[app.setup.save] Error stack:", errorStack);
+    console.error("[app.setup.save] Error type:", (err as { constructor?: { name?: string } })?.constructor?.name);
     return jsonResponse({ error: "save_failed", details: errorMsg }, 500);
   }
 };
