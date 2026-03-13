@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import type { ActionFunctionArgs, LoaderFunctionArgs, HeadersFunction } from "react-router";
-import { useLoaderData, redirect, useFetcher } from "react-router";
+import type { LoaderFunctionArgs, HeadersFunction } from "react-router";
+import { useLoaderData, redirect } from "react-router";
 import AdminLayout from "~/components/admin/AdminLayout";
 import ChatWidget from "~/components/storefront/ChatWidget";
 import { Check, ArrowRight, ArrowLeft, Bot, Sparkles } from "lucide-react";
@@ -9,65 +9,6 @@ import { Input } from "~/components/ui/input";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "~/db.server";
-
-// ─── Action (single POST on final Finish) ────────────────────────────────────
-export const action = async ({ request }: ActionFunctionArgs) => {
-  console.log("[app.setup] action START");
-
-  const formData = await request.formData();
-  const host = (formData.get("host") as string) || "";
-
-  let shop: string = "";
-
-  try {
-    const { session } = await authenticate.admin(request);
-    shop = session.shop;
-    console.log("[app.setup] action auth: session →", shop);
-  } catch {
-    // Fallback: decode host param
-    if (host) {
-      try {
-        const decoded = Buffer.from(host, "base64").toString("utf-8");
-        if (decoded.includes("admin.shopify.com/store/")) {
-          shop = `${decoded.split("admin.shopify.com/store/")[1]}.myshopify.com`;
-        } else {
-          shop = host;
-        }
-      } catch {
-        shop = host;
-      }
-      console.log("[app.setup] action auth: host fallback →", shop);
-    }
-  }
-
-  if (!shop) {
-    console.error("[app.setup] action: no shop — redirecting to login");
-    return redirect("/auth/login");
-  }
-
-  const botName   = ((formData.get("botName")   as string) || "ShopMate").trim();
-  const greeting  = ((formData.get("greeting")  as string) || "Hi! 👋 How can I help you today?").trim();
-  const tone      = ((formData.get("tone")      as string) || "Friendly").trim();
-  const quickActionsRaw = (formData.get("quickActions") as string) || "[]";
-
-  let quickActions: string[] = [];
-  try { quickActions = JSON.parse(quickActionsRaw); } catch { quickActions = []; }
-
-  console.log("[app.setup] action saving:", { shop, botName, tone, quickActions });
-
-  await prisma.shopSettings.upsert({
-    where:  { shop },
-    update: { botName, greeting, tone, quickActions, setupCompleted: true, lastActiveAt: new Date() },
-    create: { shop, botName, greeting, tone, quickActions, setupCompleted: true, lastActiveAt: new Date() },
-  });
-
-  console.log("[app.setup] action ✅ saved — returning success");
-
-  return new Response(JSON.stringify({ success: true }), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
-};
 
 // ─── Loader ──────────────────────────────────────────────────────────────────
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -139,9 +80,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
 // ─── Steps metadata ───────────────────────────────────────────────────────────
 const steps = [
-  { title: "Customize",     description: "Name, greeting & tone",        icon: Bot      },
-  { title: "Quick Actions", description: "Choose what appears first",     icon: Sparkles },
-  { title: "Done",          description: "Ready to go!",                  icon: Check    },
+  { title: "Customize",     description: "Name, greeting & tone",     icon: Bot      },
+  { title: "Quick Actions", description: "Choose what appears first", icon: Sparkles },
+  { title: "Done",          description: "Ready to go!",              icon: Check    },
 ];
 
 const toneOptions = [
@@ -151,17 +92,17 @@ const toneOptions = [
 ];
 
 const ALL_QUICK_ACTIONS = [
-  { label: "Track my order",           icon: "📦" },
-  { label: "Product recommendations",  icon: "✨" },
-  { label: "Returns & exchanges",      icon: "🔄" },
+  { label: "Track my order",          icon: "📦" },
+  { label: "Product recommendations", icon: "✨" },
+  { label: "Returns & exchanges",     icon: "🔄" },
 ];
 
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function SetupWizard() {
   const loaderData = useLoaderData<typeof loader>();
-  const { host, error } = loaderData;
+  const { error } = loaderData;
 
-  // Local state — no network calls until Finish
+  // All state is local — no network calls during the wizard
   const [currentStep,  setCurrentStep]  = useState(0);
   const [botName,      setBotName]      = useState(loaderData.botName);
   const [greeting,     setGreeting]     = useState(loaderData.greeting);
@@ -169,22 +110,8 @@ export default function SetupWizard() {
   const [quickActions, setQuickActions] = useState<string[]>(loaderData.quickActions);
 
   const shopify = useAppBridge();
-  const fetcher = useFetcher<{ success?: boolean; error?: string }>();
 
-  // ── Watch for successful final save ──
-  useEffect(() => {
-    if (fetcher.state === "idle" && fetcher.data?.success) {
-      console.log("[SetupWizard] Setup complete ✅ — navigating to /app");
-      shopify?.toast?.show?.("✅ Setup complete!", { duration: 2000 });
-      window.location.href = "/app";
-    }
-    if (fetcher.state === "idle" && fetcher.data?.error) {
-      console.error("[SetupWizard] Save error:", fetcher.data.error);
-      shopify?.toast?.show?.("❌ Save failed. Please try again.", { duration: 3000 });
-    }
-  }, [fetcher.state, fetcher.data, shopify]);
-
-  // ── Show loader error toasts ──
+  // Show loader error toasts
   useEffect(() => {
     if (error) {
       shopify?.toast?.show?.(`❌ ${error}`, { duration: 3000 });
@@ -200,11 +127,18 @@ export default function SetupWizard() {
     );
   };
 
-  // Steps 1 & 2 — pure local navigation, no network
+  // Steps 1 & 2 — pure local navigation
   const handleNext = () => setCurrentStep((prev) => prev + 1);
   const handleBack = () => setCurrentStep((prev) => Math.max(0, prev - 1));
 
-  const isSaving = fetcher.state !== "idle";
+  // Step 3 — navigate to dashboard via full-page navigation (bypasses iframe CSP)
+  // Settings are saved there via a native <form> POST that works reliably.
+  function goToDashboard() {
+    // Preserve Shopify query params so authenticate.admin() works on the dashboard
+    const current = new URL(window.location.href);
+    current.pathname = "/app";
+    window.location.href = current.toString();
+  }
 
   return (
     <AdminLayout>
@@ -341,52 +275,40 @@ export default function SetupWizard() {
                 </div>
               )}
 
-              {/* ── Step 3: Done — single useFetcher form ── */}
+              {/* ── Step 3: Done — no saving, just navigate to dashboard ── */}
               {currentStep === 2 && (
-                <fetcher.Form method="post" action="/app/setup">
-                  {/* All collected data as hidden inputs */}
-                  <input type="hidden" name="host"         value={host || ""} />
-                  <input type="hidden" name="botName"      value={botName} />
-                  <input type="hidden" name="greeting"     value={greeting} />
-                  <input type="hidden" name="tone"         value={tone.charAt(0).toUpperCase() + tone.slice(1)} />
-                  <input type="hidden" name="quickActions" value={JSON.stringify(quickActions)} />
-
-                  <div className="text-center py-8 space-y-4">
-                    <div className="w-16 h-16 rounded-full bg-accent flex items-center justify-center mx-auto">
-                      <Check className="w-8 h-8 text-accent-foreground" />
-                    </div>
-                    <h4 className="text-lg font-semibold text-foreground">All Set! 🎉</h4>
-                    <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                      ShopMate is ready to go. Your chat widget is live on your storefront.
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      You can change these settings anytime from the dashboard.
-                    </p>
+                <div className="text-center py-8 space-y-4">
+                  <div className="w-16 h-16 rounded-full bg-accent flex items-center justify-center mx-auto">
+                    <Check className="w-8 h-8 text-accent-foreground" />
                   </div>
+                  <h4 className="text-lg font-semibold text-foreground">All Set! 🎉</h4>
+                  <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                    Your ShopMate widget is ready. Head to the dashboard to save your preferences and go live.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    You can change these settings anytime from the dashboard.
+                  </p>
 
-                  {/* Navigation inside the fetcher form */}
                   <div className="flex justify-between gap-2 mt-6">
                     <button
                       type="button"
                       onClick={handleBack}
-                      disabled={isSaving}
-                      className="px-4 py-2 border border-border text-foreground hover:bg-muted rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                      className="px-4 py-2 border border-border text-foreground hover:bg-muted rounded-md text-sm font-medium transition-colors flex items-center gap-1"
                     >
                       <ArrowLeft className="w-4 h-4 mr-1" /> Back
                     </button>
                     <button
-                      type="submit"
-                      disabled={isSaving}
-                      className="px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                      type="button"
+                      onClick={goToDashboard}
+                      className="px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-md text-sm font-medium transition-colors flex items-center gap-1"
                     >
-                      {isSaving ? "Saving…" : "Finish Setup"}
-                      {!isSaving && <Check className="w-4 h-4" />}
+                      Go to Dashboard <ArrowRight className="w-4 h-4" />
                     </button>
                   </div>
-                </fetcher.Form>
+                </div>
               )}
 
-              {/* Navigation for steps 1 & 2 (outside fetcher form) */}
+              {/* Navigation for steps 1 & 2 */}
               {currentStep < 2 && (
                 <div className="flex justify-between gap-2 mt-6">
                   <button

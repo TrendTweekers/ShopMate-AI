@@ -155,6 +155,29 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
   }
 
+  // ─── Handle Setup Complete ──
+  if (intent === "setup_complete") {
+    console.log(`[app._index action] setup_complete from ${shop}`);
+    const botName      = ((formData.get("botName")   as string) || "ShopMate").trim();
+    const greeting     = ((formData.get("greeting")  as string) || "Hi! 👋 How can I help you today?").trim();
+    const tone         = ((formData.get("tone")      as string) || "Friendly").trim();
+    const quickActionsRaw = (formData.get("quickActions") as string) || "[]";
+    let quickActions: string[] = [];
+    try { quickActions = JSON.parse(quickActionsRaw); } catch { quickActions = []; }
+
+    try {
+      await prisma.shopSettings.update({
+        where:  { shop },
+        data:   { botName, greeting, tone, quickActions, setupCompleted: true, lastActiveAt: new Date() },
+      });
+      console.log(`[app._index action] ✅ setup_complete saved for ${shop}`);
+      return redirect("/app");
+    } catch (err) {
+      console.error("[app._index action] ❌ setup_complete error:", err instanceof Error ? err.message : String(err));
+      return redirect("/app?setup_error=1");
+    }
+  }
+
   // Unknown intent
   return Response.json({ ok: false, error: "Unknown intent" }, { status: 400 });
 };
@@ -327,6 +350,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return {
     // Feedback modal needs shop domain for form submission
     shop,
+    // Bot settings (for setup panel when setupCompleted === false)
+    botName:      settings.botName      ?? "ShopMate",
+    greeting:     settings.greeting     ?? "Hi! 👋 How can I help you today?",
+    tone:         (settings.tone        ?? "Friendly"),
+    quickActions: (settings.quickActions as string[]) ?? ["Track my order", "Product recommendations", "Returns & exchanges"],
     totalChats,
     totalMessages,
     deflectionRate,
@@ -369,6 +397,206 @@ function timeAgo(isoDate: string): string {
   const diffHr = Math.floor(diffMin / 60);
   if (diffHr < 24) return `${diffHr}h ago`;
   return `${Math.floor(diffHr / 24)}d ago`;
+}
+
+// ─── Setup Panel component ────────────────────────────────────────────────────
+// Shown on dashboard when setupCompleted === false.
+// Uses a plain native <form method="POST"> — full page submit, no iframe/CSP issues.
+
+const SETUP_QUICK_ACTIONS = [
+  { label: "Track my order",          icon: "📦" },
+  { label: "Product recommendations", icon: "✨" },
+  { label: "Returns & exchanges",     icon: "🔄" },
+];
+
+function SetupPanel({
+  defaultBotName,
+  defaultGreeting,
+  defaultTone,
+  defaultQuickActions,
+}: {
+  defaultBotName: string;
+  defaultGreeting: string;
+  defaultTone: string;
+  defaultQuickActions: string[];
+}) {
+  const [botName,      setBotName]      = useState(defaultBotName);
+  const [greeting,     setGreeting]     = useState(defaultGreeting);
+  const [tone,         setTone]         = useState(defaultTone || "Friendly");
+  const [quickActions, setQuickActions] = useState<string[]>(
+    defaultQuickActions.length > 0
+      ? defaultQuickActions
+      : ["Track my order", "Product recommendations", "Returns & exchanges"]
+  );
+
+  const toggleAction = (label: string) => {
+    setQuickActions((prev) =>
+      prev.includes(label) ? prev.filter((a) => a !== label) : [...prev, label]
+    );
+  };
+
+  const canSubmit = botName.trim() && greeting.trim() && quickActions.length > 0;
+
+  return (
+    <div
+      style={{
+        background: "linear-gradient(135deg, #0ea5e9 0%, #06b6d4 100%)",
+        border: "1px solid #0284c7",
+        borderRadius: 12,
+        padding: "20px 24px",
+      }}
+    >
+      <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: 16, color: "#fff" }}>
+        🚀 Welcome to ShopMate! Customize your AI assistant.
+      </p>
+      <p style={{ margin: "0 0 16px", fontSize: 13, color: "rgba(255,255,255,0.85)" }}>
+        Fill in the details below and click Save to complete your setup.
+      </p>
+
+      {/* Native form — full page POST, no iframe XHR, no CSP issues */}
+      <form method="POST" action="/app">
+        <input type="hidden" name="intent"       value="setup_complete" />
+        {/* quickActions serialised as JSON via hidden input, updated on every toggle */}
+        <input type="hidden" name="quickActions" value={JSON.stringify(quickActions)} />
+        <input type="hidden" name="tone"         value={tone} />
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+          {/* Bot Name */}
+          <div>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#fff", marginBottom: 4 }}>
+              Bot Name
+            </label>
+            <input
+              type="text"
+              name="botName"
+              value={botName}
+              onChange={(e) => setBotName(e.target.value)}
+              placeholder="ShopMate"
+              style={{
+                width: "100%",
+                padding: "8px 10px",
+                borderRadius: 8,
+                border: "none",
+                fontSize: 14,
+                boxSizing: "border-box" as const,
+                outline: "none",
+              }}
+            />
+          </div>
+
+          {/* Greeting */}
+          <div>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#fff", marginBottom: 4 }}>
+              Greeting Message
+            </label>
+            <input
+              type="text"
+              name="greeting"
+              value={greeting}
+              onChange={(e) => setGreeting(e.target.value)}
+              placeholder="Hi! 👋 How can I help you today?"
+              style={{
+                width: "100%",
+                padding: "8px 10px",
+                borderRadius: 8,
+                border: "none",
+                fontSize: 14,
+                boxSizing: "border-box" as const,
+                outline: "none",
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Tone */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#fff", marginBottom: 6 }}>
+            Tone
+          </label>
+          <div style={{ display: "flex", gap: 8 }}>
+            {["Friendly", "Professional", "Casual"].map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTone(t)}
+                style={{
+                  padding: "5px 14px",
+                  borderRadius: 6,
+                  border: "1px solid rgba(255,255,255,0.6)",
+                  background: tone === t ? "#fff" : "transparent",
+                  color: tone === t ? "#0284c7" : "#fff",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  transition: "all 0.15s",
+                }}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#fff", marginBottom: 6 }}>
+            Quick Actions (shown in chat widget)
+          </label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" as const }}>
+            {SETUP_QUICK_ACTIONS.map((a) => (
+              <button
+                key={a.label}
+                type="button"
+                onClick={() => toggleAction(a.label)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "6px 12px",
+                  borderRadius: 8,
+                  border: "1px solid rgba(255,255,255,0.6)",
+                  background: quickActions.includes(a.label) ? "rgba(255,255,255,0.25)" : "transparent",
+                  color: "#fff",
+                  fontSize: 13,
+                  fontWeight: quickActions.includes(a.label) ? 600 : 400,
+                  cursor: "pointer",
+                  transition: "all 0.15s",
+                }}
+              >
+                {quickActions.includes(a.label) ? "✅" : "⬜"} {a.icon} {a.label}
+              </button>
+            ))}
+          </div>
+          {quickActions.length === 0 && (
+            <p style={{ margin: "6px 0 0", fontSize: 12, color: "#fde68a" }}>
+              ⚠ Select at least one quick action
+            </p>
+          )}
+        </div>
+
+        {/* Save button */}
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            style={{
+              padding: "10px 28px",
+              borderRadius: 8,
+              background: canSubmit ? "#fff" : "rgba(255,255,255,0.4)",
+              color: canSubmit ? "#0284c7" : "rgba(255,255,255,0.7)",
+              fontSize: 14,
+              fontWeight: 700,
+              border: "none",
+              cursor: canSubmit ? "pointer" : "not-allowed",
+              transition: "all 0.15s",
+            }}
+          >
+            ✅ Save & Complete Setup
+          </button>
+        </div>
+      </form>
+    </div>
+  );
 }
 
 // ─── Review Banner component ───────────────────────────────────────────────────
@@ -790,6 +1018,10 @@ export default function Dashboard() {
     revenueChangePct,
     revenueLeaderboard,
     feedbackSuccess,
+    botName,
+    greeting,
+    tone,
+    quickActions,
   } = useLoaderData<typeof loader>();
 
   const navigate = useNavigate();
@@ -823,45 +1055,15 @@ export default function Dashboard() {
     <AdminLayout>
       <div className="space-y-6 max-w-6xl">
 
-      {/* ── Setup banner — show when setup not completed ── */}
+      {/* ── Setup panel — shown when setup not completed ── */}
+      {/* Uses a native <form> POST which bypasses the Shopify iframe CSP issue */}
       {!setupCompleted && (
-        <div
-          style={{
-            background: "linear-gradient(135deg, #0ea5e9 0%, #06b6d4 100%)",
-            border: "1px solid #0284c7",
-            borderRadius: 10,
-            padding: "16px 18px",
-            display: "flex",
-            alignItems: "center",
-            gap: 16,
-            flexWrap: "wrap" as const,
-          }}
-        >
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <p style={{ margin: 0, fontWeight: 600, fontSize: 14, color: "#fff" }}>
-              🚀 Complete Your Setup
-            </p>
-            <p style={{ margin: "4px 0 0", fontSize: 13, color: "rgba(255,255,255,0.9)" }}>
-              Customize your AI assistant's name, greeting, and quick actions in just 3 steps.
-            </p>
-          </div>
-          <button
-            onClick={() => navigate("/app/setup")}
-            style={{
-              padding: "8px 20px",
-              borderRadius: 8,
-              background: "#fff",
-              color: "#0284c7",
-              fontSize: 13,
-              fontWeight: 600,
-              border: "none",
-              cursor: "pointer",
-              whiteSpace: "nowrap" as const,
-            }}
-          >
-            Go to Setup →
-          </button>
-        </div>
+        <SetupPanel
+          defaultBotName={botName}
+          defaultGreeting={greeting}
+          defaultTone={tone}
+          defaultQuickActions={quickActions}
+        />
       )}
 
       {/* ── Review banner — only visible when a trigger fires ── */}
