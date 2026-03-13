@@ -97,13 +97,6 @@ const ALL_QUICK_ACTIONS = [
   { label: "Returns & exchanges",     icon: "🔄" },
 ];
 
-// ─── Default greetings per tone (must match preview card examples exactly) ────
-const TONE_GREETINGS: Record<string, string> = {
-  friendly:     "Hey there! 😊 What's up? Ready to find something awesome today?",
-  professional: "Hello! How may I assist you today? I'm here to help with your order or questions.",
-  casual:       "Yo! What's good? Need help finding something cool?",
-};
-
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function SetupWizard() {
   const loaderData = useLoaderData<typeof loader>();
@@ -115,13 +108,6 @@ export default function SetupWizard() {
   const [greeting,     setGreeting]     = useState(loaderData.greeting);
   const [tone,         setTone]         = useState(loaderData.tone);
   const [quickActions, setQuickActions] = useState<string[]>(loaderData.quickActions);
-
-  // True once the user has manually typed in the Greeting field, preventing
-  // tone switches from overwriting a custom greeting they've already written.
-  // Initialised to true only when the stored greeting is a custom (non-default) value.
-  const [greetingEdited, setGreetingEdited] = useState(
-    () => !Object.values(TONE_GREETINGS).includes(loaderData.greeting)
-  );
 
   const shopify = useAppBridge();
 
@@ -144,14 +130,6 @@ export default function SetupWizard() {
   // Steps 1 & 2 — pure local navigation
   const handleNext = () => setCurrentStep((prev) => prev + 1);
   const handleBack = () => setCurrentStep((prev) => Math.max(0, prev - 1));
-
-  // Selects a tone and pre-fills the greeting (unless user already customised it)
-  const handleToneChange = (value: string) => {
-    setTone(value);
-    if (!greetingEdited) {
-      setGreeting(TONE_GREETINGS[value] ?? greeting);
-    }
-  };
 
   // Step 3 — navigate to dashboard via full-page navigation (bypasses iframe CSP)
   // Settings are saved there via a native <form> POST that works reliably.
@@ -228,11 +206,7 @@ export default function SetupWizard() {
                     <label className="text-sm font-semibold text-foreground block mb-2">Greeting Message</label>
                     <Input
                       value={greeting}
-                      onChange={(e) => {
-                        setGreeting(e.target.value);
-                        // Mark as user-edited so tone changes stop overwriting it
-                        setGreetingEdited(true);
-                      }}
+                      onChange={(e) => setGreeting(e.target.value)}
                       placeholder="Hi! 👋 How can I help you today?"
                     />
                     <p className="text-xs text-muted-foreground mt-1">
@@ -247,7 +221,7 @@ export default function SetupWizard() {
                         <button
                           key={opt.value}
                           type="button"
-                          onClick={() => handleToneChange(opt.value)}
+                          onClick={() => setTone(opt.value)}
                           className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${
                             opt.value === tone
                               ? "bg-primary text-primary-foreground border-primary"
@@ -293,7 +267,7 @@ export default function SetupWizard() {
                         <button
                           key={ex.value}
                           type="button"
-                          onClick={() => handleToneChange(ex.value)}
+                          onClick={() => setTone(ex.value)}
                           style={{
                             background:   ex.bg,
                             border:       `1.5px solid ${tone === ex.value ? ex.color : "hsl(210 10% 88%)"}`,
