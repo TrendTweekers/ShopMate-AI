@@ -130,7 +130,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     botName:      settings.botName      ?? "ShopMate",
     greeting:     settings.greeting     ?? "Hi! 👋 How can I help you today?",
     tone:         (settings.tone        ?? "Friendly").toLowerCase(),
-    quickActions: (settings.quickActions as string[]) ?? ["Track order", "Product recommendations", "Returns & exchanges"],
+    quickActions: (settings.quickActions as string[]) ?? ["Track my order", "Product recommendations", "Returns & exchanges"],
     error,
     host:         hostParam,
     idToken:      idTokenParam,
@@ -151,10 +151,9 @@ const toneOptions = [
 ];
 
 const ALL_QUICK_ACTIONS = [
-  { label: "Track order",              icon: "📦" },
+  { label: "Track my order",           icon: "📦" },
   { label: "Product recommendations",  icon: "✨" },
   { label: "Returns & exchanges",      icon: "🔄" },
-  { label: "Talk to human",            icon: "👤" },
 ];
 
 // ─── Component ───────────────────────────────────────────────────────────────
