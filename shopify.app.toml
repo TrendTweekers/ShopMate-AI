@@ -2,6 +2,8 @@
 
 client_id = "9b1e966350cee0ffb9d2b6f46719da03"
 name = "ShopMate AI"
+handle = "shopmate-ai"
+icon = "public/icons/shopmate-ai-icon.png"
 application_url = "https://shopmate-ai-helper-production.up.railway.app"
 embedded = true
 
