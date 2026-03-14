@@ -233,6 +233,9 @@ export default function SetupWizard() {
                     <p className="text-xs text-muted-foreground mt-1">
                       First message customers see when they open the chat
                     </p>
+                    <p className="text-xs text-muted-foreground mt-1.5 italic">
+                      Greeting is the first message customers see. Write anything that fits your brand. Tone only affects how the AI responds after that.
+                    </p>
                   </div>
 
                   <div>
@@ -254,7 +257,7 @@ export default function SetupWizard() {
                       ))}
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">
-                      This affects how the AI responds to customer questions
+                      Tone changes the AI's speaking style — preview examples below show the difference.
                     </p>
 
                     {/* ── Tone preview examples ── */}
