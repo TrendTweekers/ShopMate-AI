@@ -62,7 +62,7 @@ model ShopSettings {
   botName         String    @default("ShopMate") // custom AI assistant name
   greeting        String    @default("Hi! 👋 How can I help you today?") // initial greeting message
   tone            String    @default("Friendly") // "Friendly" | "Professional" | "Casual"
-  quickActions    String[]  @default(["Track order", "Product recommendations", "Returns & exchanges"]) // enabled quick action buttons
+  quickActions    String[]  @default(["Track my order", "Product recommendations", "Returns & exchanges"]) // enabled quick action buttons
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 }
