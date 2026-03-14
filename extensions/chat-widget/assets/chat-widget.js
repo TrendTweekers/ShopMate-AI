@@ -96,7 +96,10 @@
         if (s.bubbleTextColor) { BUBBLE_TXT = s.bubbleTextColor; }
         if (s.buttonBgColor)   { BTN_BG     = s.buttonBgColor;   }
         if (s.buttonTextColor) { BTN_TXT    = s.buttonTextColor; }
-        console.log("[ShopMate] Settings applied from DB:", { botName: BOT_NAME, greeting: GREETING, quickReplies: QUICK_REPLIES, colors: { HEADER_BG, BUBBLE_BG, BTN_BG } });
+        console.log("[ShopMate] Settings applied from DB:", {
+          botName: BOT_NAME, greeting: GREETING, quickReplies: QUICK_REPLIES,
+          colors: { HEADER_BG, HEADER_TXT, BUBBLE_BG, BUBBLE_TXT, BTN_BG, BTN_TXT }
+        });
       } else {
         // Log the full response text so we can see any error message from the server
         var errText = "";
@@ -920,6 +923,40 @@
     resetIdleTimer();
   }
 
+  // ── Apply DB colors as inline styles (belt-and-suspenders over the CSS) ───
+  // Called at the end of init() once all DOM elements exist.
+  // Inline styles have highest specificity — they always win over the CSS block.
+  function applyColors() {
+    // Launcher bubble
+    if (bubble) {
+      bubble.style.background = BUBBLE_BG;
+      bubble.style.color      = BUBBLE_TXT;
+    }
+    // Chat header background
+    var hdr = panel && panel.querySelector(".sm-header");
+    if (hdr) hdr.style.background = HEADER_BG;
+
+    // Header text / icon elements
+    var hdrName  = panel && panel.querySelector(".sm-header-name");
+    var hdrSub   = panel && panel.querySelector(".sm-header-sub");
+    var hdrClose = panel && panel.querySelector(".sm-header-close");
+    var hdrAvatar= panel && panel.querySelector(".sm-avatar");
+    if (hdrName)  hdrName.style.color  = HEADER_TXT;
+    if (hdrSub)   { hdrSub.style.color = HEADER_TXT; hdrSub.style.opacity = "0.75"; }
+    if (hdrClose) { hdrClose.style.color = HEADER_TXT; }
+    if (hdrAvatar){ hdrAvatar.style.color = HEADER_TXT; }
+
+    // Send button
+    if (sendBtn) {
+      sendBtn.style.background = BTN_BG;
+      sendBtn.style.color      = BTN_TXT;
+    }
+
+    console.log("[ShopMate] applyColors() done:", {
+      HEADER_BG, HEADER_TXT, BUBBLE_BG, BUBBLE_TXT, BTN_BG, BTN_TXT
+    });
+  }
+
   // ── Build DOM ─────────────────────────────────────────────────────────────
   function init() {
     // Remove any previously-injected widget (safety net for hot reloads).
@@ -1005,6 +1042,7 @@
       }
     });
 
+    applyColors();       // apply DB-fetched colors as inline styles (belt-and-suspenders)
     renderMessages();
     console.log("[ShopMate] Widget ready. sendBtn in DOM:", document.body.contains(sendBtn));
 
