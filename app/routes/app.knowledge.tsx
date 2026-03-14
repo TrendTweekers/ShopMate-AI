@@ -9,7 +9,7 @@
  *   - Toggle active/draft status
  *   - Delete entries
  */
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useFetcher, useLoaderData, useRouteError } from "react-router";
 import AdminLayout from "~/components/admin/AdminLayout";
@@ -192,6 +192,15 @@ export default function KnowledgePage() {
 
   const lastMessage = fetcher.data?.message ?? "";
   const lastOk = fetcher.data?.ok;
+
+  // Close add/edit panel as soon as the fetcher lands with ok: true
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data?.ok) {
+      if (showAddForm) setShowAddForm(false);
+      if (editing)     setEditing(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetcher.state, fetcher.data]);
 
   function handleImport() {
     const fd = new FormData();
