@@ -8,10 +8,16 @@
  *   - Add custom FAQs / entries
  *   - Toggle active/draft status
  *   - Delete entries
+ *
+ * NOTE: Uses React Router <Form> + useNavigation instead of useFetcher.
+ * useFetcher background XHR requires App Bridge postMessage token injection,
+ * which fails in some Shopify admin environments with an origin mismatch error.
+ * Full-page Form submissions include the id_token query param so
+ * authenticate.admin() validates directly — no postMessage handshake needed.
  */
-import { useState, useEffect } from "react";
+import { useState, useRef } from "react";
 import type { ActionFunctionArgs, HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useFetcher, useLoaderData, useRouteError } from "react-router";
+import { Form, useLoaderData, useRouteError, useNavigation, useActionData } from "react-router";
 import AdminLayout from "~/components/admin/AdminLayout";
 import { BookOpen, Plus, Pencil, Trash2, RefreshCw, CheckCircle, AlertCircle } from "lucide-react";
 import { authenticate } from "../shopify.server";
@@ -83,7 +89,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       console.log(`[KB] Import result: imported=${result.imported} skipped=${result.skipped} errors=${JSON.stringify(result.errors)}`);
 
       if (result.errors.length > 0) {
-        // Detect the specific scope-missing sentinel set by importStorePolicies
         const isScopeMissing = result.errors.some((e) => e.startsWith("SCOPE_MISSING:"));
         const cleanErrors = result.errors.map((e) =>
           e.startsWith("SCOPE_MISSING:") ? e.replace("SCOPE_MISSING:", "").trim() : e,
@@ -175,54 +180,29 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
 export default function KnowledgePage() {
   const { entries, hasImported } = useLoaderData<typeof loader>();
-  const fetcher = useFetcher<{
-    ok: boolean;
-    scopeMissing?: boolean;
-    message?: string;
-    imported?: number;
-    errors?: string[];
-  }>();
+  const actionData = useActionData<typeof action>();
+  const navigation = useNavigation();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  // showAddForm resets to false on every page navigation (after successful save)
   const [showAddForm, setShowAddForm] = useState(false);
 
+  const deleteFormRef = useRef<HTMLFormElement>(null);
+  const deleteIdRef   = useRef<HTMLInputElement>(null);
+
   const selected = entries.find((e) => e.id === selectedId);
-  const isSubmitting = fetcher.state !== "idle";
+  const isSubmitting = navigation.state !== "idle";
 
-  const lastMessage = fetcher.data?.message ?? "";
-  const lastOk = fetcher.data?.ok;
+  const lastMessage = actionData?.message ?? "";
+  const lastOk      = actionData?.ok;
 
-  // Close add/edit panel as soon as the fetcher lands with ok: true
-  useEffect(() => {
-    if (fetcher.state === "idle" && fetcher.data?.ok) {
-      if (showAddForm) setShowAddForm(false);
-      if (editing)     setEditing(false);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetcher.state, fetcher.data]);
-
-  function handleImport() {
-    const fd = new FormData();
-    fd.append("intent", "import_policies");
-    fetcher.submit(fd, { method: "post" });
-  }
-
+  /** Confirm + programmatically submit the hidden delete form */
   function handleDelete(id: string) {
     if (!window.confirm("Delete this entry? This cannot be undone.")) return;
-    const fd = new FormData();
-    fd.append("intent", "delete_entry");
-    fd.append("id", id);
-    fetcher.submit(fd, { method: "post" });
+    if (deleteIdRef.current) deleteIdRef.current.value = id;
+    deleteFormRef.current?.requestSubmit();
     if (selectedId === id) setSelectedId(null);
-  }
-
-  function handleToggle(id: string, status: string) {
-    const fd = new FormData();
-    fd.append("intent", "toggle_status");
-    fd.append("id", id);
-    fd.append("status", status);
-    fetcher.submit(fd, { method: "post" });
   }
 
   const sourceLabel = (s: string) =>
@@ -230,6 +210,12 @@ export default function KnowledgePage() {
 
   return (
     <AdminLayout>
+      {/* Hidden delete form — submitted programmatically after window.confirm */}
+      <Form method="post" ref={deleteFormRef} style={{ display: "none" }}>
+        <input type="hidden" name="intent" value="delete_entry" />
+        <input type="hidden" name="id" ref={deleteIdRef} defaultValue="" />
+      </Form>
+
       <div className="max-w-4xl space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -240,20 +226,24 @@ export default function KnowledgePage() {
           </p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button
-            onClick={handleImport}
-            disabled={isSubmitting}
-            style={{
-              display: "flex", alignItems: "center", gap: 6,
-              padding: "7px 14px", borderRadius: 8,
-              border: "1px solid #d1d5db", background: "#fff",
-              fontSize: 13, fontWeight: 500, cursor: "pointer",
-              color: "#374151", opacity: isSubmitting ? 0.6 : 1,
-            }}
-          >
-            <RefreshCw size={14} />
-            {hasImported ? "Re-import from Shopify" : "Import from Shopify"}
-          </button>
+          {/* Import button — its own Form so it's a real navigation POST */}
+          <Form method="post" style={{ display: "inline" }}>
+            <input type="hidden" name="intent" value="import_policies" />
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "7px 14px", borderRadius: 8,
+                border: "1px solid #d1d5db", background: "#fff",
+                fontSize: 13, fontWeight: 500, cursor: "pointer",
+                color: "#374151", opacity: isSubmitting ? 0.6 : 1,
+              }}
+            >
+              <RefreshCw size={14} />
+              {isSubmitting ? "Working…" : hasImported ? "Re-import from Shopify" : "Import from Shopify"}
+            </button>
+          </Form>
           <button
             onClick={() => { setShowAddForm(true); setSelectedId(null); setEditing(false); }}
             style={{
@@ -275,22 +265,22 @@ export default function KnowledgePage() {
           style={{
             display: "flex", alignItems: "flex-start", gap: 10,
             padding: "12px 16px", borderRadius: 10,
-            background: lastOk ? "hsl(160 100% 96%)" : fetcher.data?.scopeMissing ? "#fef2f2" : "#fff7ed",
-            border: `1px solid ${lastOk ? "#008060" : fetcher.data?.scopeMissing ? "#fca5a5" : "#f97316"}`,
-            fontSize: 13, color: lastOk ? "#004c3f" : fetcher.data?.scopeMissing ? "#b91c1c" : "#c2410c",
+            background: lastOk ? "hsl(160 100% 96%)" : actionData?.scopeMissing ? "#fef2f2" : "#fff7ed",
+            border: `1px solid ${lastOk ? "#008060" : actionData?.scopeMissing ? "#fca5a5" : "#f97316"}`,
+            fontSize: 13, color: lastOk ? "#004c3f" : actionData?.scopeMissing ? "#b91c1c" : "#c2410c",
           }}
         >
           {lastOk
             ? <CheckCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
             : <AlertCircle size={16} style={{ flexShrink: 0, marginTop: 1 }} />}
           <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 600, marginBottom: fetcher.data?.scopeMissing ? 4 : 0 }}>
+            <div style={{ fontWeight: 600, marginBottom: actionData?.scopeMissing ? 4 : 0 }}>
               {lastMessage}
             </div>
-            {fetcher.data?.scopeMissing && (
+            {actionData?.scopeMissing && (
               <>
                 <div style={{ fontSize: 12, marginTop: 4, lineHeight: 1.6 }}>
-                  {fetcher.data.errors?.[0]}
+                  {actionData.errors?.[0]}
                 </div>
                 <div style={{ fontSize: 12, marginTop: 6, padding: "8px 10px", background: "#fee2e2", borderRadius: 6, lineHeight: 1.7 }}>
                   <strong>How to fix:</strong>
@@ -303,9 +293,9 @@ export default function KnowledgePage() {
                 </div>
               </>
             )}
-            {!lastOk && !fetcher.data?.scopeMissing && fetcher.data?.errors && fetcher.data.errors.length > 1 && (
+            {!lastOk && !actionData?.scopeMissing && actionData?.errors && actionData.errors.length > 1 && (
               <ul style={{ margin: "4px 0 0 16px", padding: 0, fontSize: 12 }}>
-                {fetcher.data.errors.map((e: string, i: number) => <li key={i}>{e}</li>)}
+                {actionData.errors.map((e: string, i: number) => <li key={i}>{e}</li>)}
               </ul>
             )}
           </div>
@@ -327,18 +317,21 @@ export default function KnowledgePage() {
           <p style={{ fontSize: 13, color: "#6b7280", margin: "0 0 20px" }}>
             Import your store's policies from Shopify automatically, or add custom FAQs.
           </p>
-          <button
-            onClick={handleImport}
-            disabled={isSubmitting}
-            style={{
-              padding: "8px 20px", borderRadius: 8,
-              background: "#008060", color: "#fff",
-              border: "none", fontSize: 13, fontWeight: 600,
-              cursor: "pointer",
-            }}
-          >
-            {isSubmitting ? "Importing…" : "Import Policies from Shopify"}
-          </button>
+          <Form method="post" style={{ display: "inline" }}>
+            <input type="hidden" name="intent" value="import_policies" />
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              style={{
+                padding: "8px 20px", borderRadius: 8,
+                background: "#008060", color: "#fff",
+                border: "none", fontSize: 13, fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              {isSubmitting ? "Importing…" : "Import Policies from Shopify"}
+            </button>
+          </Form>
         </div>
       )}
 
@@ -397,7 +390,7 @@ export default function KnowledgePage() {
           <div className="polaris-card">
             {/* Add form */}
             {showAddForm && (
-              <fetcher.Form method="post" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <Form method="post" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 <input type="hidden" name="intent" value="add_entry" />
                 <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "#111827" }}>Add New Entry</h3>
                 <div>
@@ -416,19 +409,28 @@ export default function KnowledgePage() {
                   />
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button type="submit" disabled={isSubmitting} onClick={() => window.umami?.track("knowledge_base_item_added")} style={{ flex: 1, padding: "8px", borderRadius: 8, background: "#008060", color: "#fff", border: "none", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    onClick={() => window.umami?.track("knowledge_base_item_added")}
+                    style={{ flex: 1, padding: "8px", borderRadius: 8, background: "#008060", color: "#fff", border: "none", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+                  >
                     {isSubmitting ? "Saving…" : "Save Entry"}
                   </button>
-                  <button type="button" onClick={() => setShowAddForm(false)} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #d1d5db", background: "#fff", fontSize: 13, cursor: "pointer", color: "#374151" }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddForm(false)}
+                    style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #d1d5db", background: "#fff", fontSize: 13, cursor: "pointer", color: "#374151" }}
+                  >
                     Cancel
                   </button>
                 </div>
-              </fetcher.Form>
+              </Form>
             )}
 
             {/* Edit form */}
             {!showAddForm && selected && editing && (
-              <fetcher.Form method="post" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <Form method="post" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 <input type="hidden" name="intent" value="update_entry" />
                 <input type="hidden" name="id" value={selected.id} />
                 <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "#111827" }}>Edit Entry</h3>
@@ -454,7 +456,7 @@ export default function KnowledgePage() {
                     Cancel
                   </button>
                 </div>
-              </fetcher.Form>
+              </Form>
             )}
 
             {/* Detail view */}
@@ -466,9 +468,18 @@ export default function KnowledgePage() {
                     <button onClick={() => setEditing(true)} title="Edit" style={{ padding: 6, borderRadius: 6, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer", display: "flex", alignItems: "center" }}>
                       <Pencil size={14} color="#6b7280" />
                     </button>
-                    <button onClick={() => handleToggle(selected.id, selected.status)} style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer", fontSize: 11, fontWeight: 500, color: "#6b7280" }}>
-                      {selected.status === "active" ? "Set Draft" : "Activate"}
-                    </button>
+                    {/* Toggle status — its own inline Form */}
+                    <Form method="post" style={{ display: "inline" }}>
+                      <input type="hidden" name="intent" value="toggle_status" />
+                      <input type="hidden" name="id" value={selected.id} />
+                      <input type="hidden" name="status" value={selected.status} />
+                      <button
+                        type="submit"
+                        style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer", fontSize: 11, fontWeight: 500, color: "#6b7280" }}
+                      >
+                        {selected.status === "active" ? "Set Draft" : "Activate"}
+                      </button>
+                    </Form>
                     <button onClick={() => handleDelete(selected.id)} title="Delete" style={{ padding: 6, borderRadius: 6, border: "1px solid #fee2e2", background: "#fff", cursor: "pointer", display: "flex", alignItems: "center" }}>
                       <Trash2 size={14} color="#b91c1c" />
                     </button>
