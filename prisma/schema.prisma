@@ -63,6 +63,13 @@ model ShopSettings {
   greeting        String    @default("Hi! 👋 How can I help you today?") // initial greeting message
   tone            String    @default("Friendly") // "Friendly" | "Professional" | "Casual"
   quickActions    String[]  @default(["Track my order", "Product recommendations", "Returns & exchanges"]) // enabled quick action buttons
+  // Widget color customization (hex strings, no gradients)
+  headerBgColor   String    @default("#008060")  // chat header background
+  headerTextColor String    @default("#ffffff")  // chat header text / icons
+  bubbleBgColor   String    @default("#008060")  // floating launcher bubble background
+  bubbleTextColor String    @default("#ffffff")  // launcher icon color
+  buttonBgColor   String    @default("#008060")  // user chat bubble + send button background
+  buttonTextColor String    @default("#ffffff")  // user chat bubble text + send icon color
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 }

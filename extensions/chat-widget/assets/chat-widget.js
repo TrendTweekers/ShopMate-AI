@@ -24,7 +24,8 @@
   // a reliable fallback if ShopMateConfig.shop is somehow missing.
   const SHOP = cfg.shop || (typeof window.Shopify !== "undefined" && window.Shopify.shop) || "";
   const API_BASE = cfg.apiBase || "";
-  const PRIMARY = cfg.primaryColor || "#008060";
+  // PRIMARY is `let` so the DB-settings fetch below can override it.
+  let PRIMARY = cfg.primaryColor || "#008060";
   const POSITION = cfg.position || "bottom-right";
 
   // Derive a slightly darker accent from PRIMARY for gradient effects.
@@ -38,6 +39,15 @@
     return "#" + [r,g,b].map(function(x){ return x.toString(16).padStart(2,"0"); }).join("");
   }
   var ACCENT = darkenHex(PRIMARY, 24); // ~15% darker for gradient end-stop
+
+  // Per-element color overrides — all default to PRIMARY/white.
+  // Overridden by DB settings fetch below (before any CSS is injected).
+  let HEADER_BG   = PRIMARY;   // chat header background
+  let HEADER_TXT  = "#ffffff"; // header text & icons
+  let BUBBLE_BG   = PRIMARY;   // floating launcher bubble background
+  let BUBBLE_TXT  = "#ffffff"; // launcher icon color
+  let BTN_BG      = PRIMARY;   // user chat bubble + send button background
+  let BTN_TXT     = "#ffffff"; // user chat bubble text + send icon
   // These are `let` so the DB-settings fetch below can override them.
   let BOT_NAME     = cfg.botName  || "ShopMate";
   // Logo URL injected by chat-widget.liquid via {{ 'shopmatelogo.png' | asset_url | json }}
@@ -79,7 +89,14 @@
         if (Array.isArray(s.quickActions) && s.quickActions.length > 0) {
           QUICK_REPLIES = s.quickActions;
         }
-        console.log("[ShopMate] Settings applied from DB:", { botName: BOT_NAME, greeting: GREETING, quickReplies: QUICK_REPLIES });
+        // Apply color overrides from DB — must happen BEFORE CSS is injected below.
+        if (s.headerBgColor)   { HEADER_BG  = s.headerBgColor;   PRIMARY = s.headerBgColor; ACCENT = darkenHex(s.headerBgColor, 24); }
+        if (s.headerTextColor) { HEADER_TXT = s.headerTextColor; }
+        if (s.bubbleBgColor)   { BUBBLE_BG  = s.bubbleBgColor;   }
+        if (s.bubbleTextColor) { BUBBLE_TXT = s.bubbleTextColor; }
+        if (s.buttonBgColor)   { BTN_BG     = s.buttonBgColor;   }
+        if (s.buttonTextColor) { BTN_TXT    = s.buttonTextColor; }
+        console.log("[ShopMate] Settings applied from DB:", { botName: BOT_NAME, greeting: GREETING, quickReplies: QUICK_REPLIES, colors: { HEADER_BG, BUBBLE_BG, BTN_BG } });
       } else {
         // Log the full response text so we can see any error message from the server
         var errText = "";
@@ -135,8 +152,8 @@
       width: 56px;
       height: 56px;
       border-radius: 50%;
-      background: linear-gradient(135deg, ${PRIMARY} 0%, ${ACCENT} 100%);
-      color: #fff;
+      background: ${BUBBLE_BG};
+      color: ${BUBBLE_TXT};
       border: none;
       cursor: pointer;
       box-shadow: 0 8px 32px rgba(0,0,0,.12);
@@ -179,7 +196,7 @@
     }
 
     .sm-header {
-      background: linear-gradient(135deg, ${PRIMARY} 0%, ${ACCENT} 100%);
+      background: ${HEADER_BG};
       padding: 14px 16px;
       display: flex;
       align-items: center;
@@ -210,8 +227,8 @@
       border: 2px solid rgba(255,255,255,0.4);
     }
     .sm-header-info { display: flex; flex-direction: column; flex: 1; }
-    .sm-header-name { color: #fff; font-weight: 700; font-size: 15px; line-height: 1.2; }
-    .sm-header-sub  { color: rgba(255,255,255,.75); font-size: 11px; margin-top: 2px; }
+    .sm-header-name { color: ${HEADER_TXT}; font-weight: 700; font-size: 15px; line-height: 1.2; }
+    .sm-header-sub  { color: ${HEADER_TXT}; opacity: 0.75; font-size: 11px; margin-top: 2px; }
     .sm-header-close {
       width: 32px; height: 32px;
       border-radius: 50%;
@@ -251,8 +268,8 @@
       border-bottom-left-radius: 4px;
     }
     .sm-bubble.user {
-      background: linear-gradient(135deg, ${PRIMARY} 0%, ${ACCENT} 100%);
-      color: #fff;
+      background: ${BTN_BG};
+      color: ${BTN_TXT};
       border-bottom-right-radius: 4px;
       box-shadow: 0 2px 8px rgba(0,0,0,.12);
     }
@@ -354,8 +371,8 @@
     }
     .sm-send {
       width: 38px; height: 38px; border-radius: 12px;
-      background: linear-gradient(135deg, ${PRIMARY} 0%, ${ACCENT} 100%);
-      color: #fff; border: none;
+      background: ${BTN_BG};
+      color: ${BTN_TXT}; border: none;
       cursor: pointer; display: flex; align-items: center; justify-content: center;
       flex-shrink: 0;
       transition: opacity .3s cubic-bezier(0.4, 0, 0.2, 1),

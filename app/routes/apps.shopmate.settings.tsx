@@ -62,11 +62,17 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const settings = await prisma.shopSettings.findUnique({
     where: { shop },
     select: {
-      botName:      true,
-      greeting:     true,
-      tone:         true,
-      quickActions: true,
-      widgetEnabled: true,
+      botName:        true,
+      greeting:       true,
+      tone:           true,
+      quickActions:   true,
+      widgetEnabled:  true,
+      headerBgColor:  true,
+      headerTextColor:true,
+      bubbleBgColor:  true,
+      bubbleTextColor:true,
+      buttonBgColor:  true,
+      buttonTextColor:true,
     },
   });
 
@@ -79,7 +85,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       "Product recommendations",
       "Returns & exchanges",
     ],
-    widgetEnabled: settings?.widgetEnabled ?? true,
+    widgetEnabled:   settings?.widgetEnabled   ?? true,
+    headerBgColor:   settings?.headerBgColor   ?? "#008060",
+    headerTextColor: settings?.headerTextColor ?? "#ffffff",
+    bubbleBgColor:   settings?.bubbleBgColor   ?? "#008060",
+    bubbleTextColor: settings?.bubbleTextColor ?? "#ffffff",
+    buttonBgColor:   settings?.buttonBgColor   ?? "#008060",
+    buttonTextColor: settings?.buttonTextColor ?? "#ffffff",
   };
 
   console.log("[apps.shopmate.settings] returning:", payload);
