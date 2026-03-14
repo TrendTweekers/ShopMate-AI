@@ -9,6 +9,7 @@ import {
   MessageSquare,
   Eye,
   Bot,
+  Palette,
 } from "lucide-react";
 
 const navItems = [
@@ -19,6 +20,7 @@ const navItems = [
   { label: "Knowledge Base", path: "/app/knowledge", icon: BookOpen },
   { label: "Escalation", path: "/app/escalation", icon: LifeBuoy },
   { label: "Conversations", path: "/app/conversations", icon: MessageSquare },
+  { label: "Widget Colors", path: "/app/customize", icon: Palette },
   { label: "Widget Preview", path: "/app/widget-preview", icon: Eye },
 ];
 
