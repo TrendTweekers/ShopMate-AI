@@ -71,6 +71,60 @@ const shopify = shopifyApp({
         console.error(`[afterAuth] Failed to auto-enable widget for ${shop}:`, err);
       }
 
+      // ── Seed default KB entries for new installs ──
+      // Only seeds if the shop has zero existing KB entries so reinstalls
+      // don't overwrite anything the merchant has already edited.
+      try {
+        const kbCount = await prisma.knowledgeBase.count({ where: { shop } });
+        if (kbCount === 0) {
+          await prisma.knowledgeBase.createMany({
+            data: [
+              {
+                shop,
+                title: "Return Policy",
+                content:
+                  "We offer a 30-day return policy on all items. Items must be unused and in original packaging. To start a return, contact our support team.",
+                type: "custom",
+                status: "active",
+                source: "manual",
+              },
+              {
+                shop,
+                title: "Shipping Info",
+                content:
+                  "We ship within 1-2 business days. Standard shipping takes 5-7 days. Express shipping takes 2-3 days. Free shipping on orders over $50.",
+                type: "custom",
+                status: "active",
+                source: "manual",
+              },
+              {
+                shop,
+                title: "Order Changes",
+                content:
+                  "Orders can be modified or cancelled within 24 hours of placing them. After that, contact us and we'll do our best to help.",
+                type: "custom",
+                status: "active",
+                source: "manual",
+              },
+              {
+                shop,
+                title: "Contact Us",
+                content:
+                  "You can reach our support team by email at support@yourstore.com or through the contact form on our website. We respond within 24 hours.",
+                type: "custom",
+                status: "active",
+                source: "manual",
+              },
+            ],
+          });
+          console.log(`[afterAuth] ✅ Seeded 4 default KB entries for new install: ${shop}`);
+        } else {
+          console.log(`[afterAuth] KB already has ${kbCount} entries, skipping seed: ${shop}`);
+        }
+      } catch (err) {
+        console.error(`[afterAuth] KB seed failed for ${shop}:`, err);
+      }
+
       // ── Import store policies asynchronously ──
       importStorePolicies(shop, admin).catch((err) => {
         console.error(`[afterAuth] Policy import failed for ${shop}:`, err);
