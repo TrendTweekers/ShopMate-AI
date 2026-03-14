@@ -19,10 +19,9 @@ const CORS = {
   "Access-Control-Allow-Headers": "Content-Type",
   "Content-Type":                 "application/json",
   // Never cache — settings change immediately when the merchant saves.
-  // Shopify's App Proxy would serve stale responses for up to max-age
-  // seconds if we set Cache-Control: public, causing the widget to show
-  // old values after a save.
-  "Cache-Control":                "no-store",
+  // no-store: browser must not cache the response at all.
+  // private: Shopify's App Proxy CDN must not cache this response either.
+  "Cache-Control":                "no-store, private",
 };
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {

@@ -20,7 +20,9 @@
   window.__shopMateWidgetLoaded = true;
 
   const cfg = window.ShopMateConfig || {};
-  const SHOP = cfg.shop || "";
+  // window.Shopify.shop is always set by Shopify's storefront — use it as
+  // a reliable fallback if ShopMateConfig.shop is somehow missing.
+  const SHOP = cfg.shop || (typeof window.Shopify !== "undefined" && window.Shopify.shop) || "";
   const API_BASE = cfg.apiBase || "";
   const PRIMARY = cfg.primaryColor || "#008060";
   const POSITION = cfg.position || "bottom-right";
@@ -51,18 +53,23 @@
   // /apps/shopmate/settings is a public App Proxy route served by Railway.
   // This overwrites the Shopify theme-editor defaults with the merchant's
   // saved dashboard values (botName, greeting, tone, quickActions).
+  console.log("[ShopMate] Theme config loaded:", { shop: SHOP, botName: BOT_NAME, greeting: GREETING, quickReplies: QUICK_REPLIES });
+
   if (SHOP) {
     try {
       // Add a cache-bust param so the browser never serves a stale response
-      // (the server now sends Cache-Control: no-store but older cached responses
-      // may still exist in browser cache from before this fix).
+      // (the server now sends Cache-Control: no-store, private but older cached
+      // responses may still exist in browser cache from before this fix).
       var settingsUrl = "/apps/shopmate/settings?shop=" + encodeURIComponent(SHOP)
                       + "&_t=" + Date.now();
+      console.log("[ShopMate] Fetching DB settings from:", settingsUrl);
       var settingsRes = await fetch(settingsUrl, {
         headers: { Accept: "application/json", "Cache-Control": "no-cache" }
       });
+      console.log("[ShopMate] Settings response status:", settingsRes.status, settingsRes.ok ? "OK" : "FAIL");
       if (settingsRes.ok) {
         var s = await settingsRes.json();
+        console.log("[ShopMate] Raw DB payload:", s);
         if (s.widgetEnabled === false) {
           console.log("[ShopMate] Widget is disabled for this shop — not rendering.");
           return;
@@ -72,14 +79,18 @@
         if (Array.isArray(s.quickActions) && s.quickActions.length > 0) {
           QUICK_REPLIES = s.quickActions;
         }
-        console.log("[ShopMate] Settings loaded from DB:", { botName: BOT_NAME, greeting: GREETING, quickReplies: QUICK_REPLIES });
+        console.log("[ShopMate] Settings applied from DB:", { botName: BOT_NAME, greeting: GREETING, quickReplies: QUICK_REPLIES });
       } else {
-        // Log the HTTP status so it's visible in the browser console for debugging
-        console.warn("[ShopMate] Settings fetch returned HTTP " + settingsRes.status + " — using theme defaults. URL: " + settingsUrl);
+        // Log the full response text so we can see any error message from the server
+        var errText = "";
+        try { errText = await settingsRes.text(); } catch (_) {}
+        console.warn("[ShopMate] Settings fetch returned HTTP " + settingsRes.status + " — using theme defaults. URL: " + settingsUrl + " | body: " + errText.slice(0, 200));
       }
     } catch (settingsErr) {
       console.warn("[ShopMate] Could not load DB settings (network error), using theme defaults:", settingsErr);
     }
+  } else {
+    console.warn("[ShopMate] SHOP is empty — cannot fetch DB settings. window.ShopMateConfig:", window.ShopMateConfig, "window.Shopify:", typeof window.Shopify !== "undefined" ? window.Shopify.shop : "undefined");
   }
   // Always relative so Shopify's proxy adds the HMAC signature.
   // API_BASE is "" — kept for backward compat if someone sets it.
