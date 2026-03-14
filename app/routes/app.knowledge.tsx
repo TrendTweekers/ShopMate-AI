@@ -64,12 +64,17 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     },
   });
 
+  const DEFAULT_TITLES = ["Return Policy", "Shipping Info", "Order Changes", "Contact Us"];
+  const existingTitles = new Set(entries.map((e) => e.title));
+  const hasAllDefaults = DEFAULT_TITLES.every((t) => existingTitles.has(t));
+
   return {
     entries: entries.map((e) => ({
       ...e,
       updatedAt: e.updatedAt.toISOString(),
     })) as KbEntry[],
     hasImported: entries.some((e) => e.source === "shopify_import"),
+    hasAllDefaults,
   };
 };
 
@@ -130,6 +135,58 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
   }
 
+  // ── Seed default example entries ─────────────────────────────────────────
+  if (intent === "seed_defaults") {
+    const DEFAULTS = [
+      {
+        title: "Return Policy",
+        content:
+          "We offer a 30-day return policy on all items. Items must be unused and in original packaging. To start a return, contact our support team.",
+      },
+      {
+        title: "Shipping Info",
+        content:
+          "We ship within 1-2 business days. Standard shipping takes 5-7 days. Express shipping takes 2-3 days. Free shipping on orders over $50.",
+      },
+      {
+        title: "Order Changes",
+        content:
+          "Orders can be modified or cancelled within 24 hours of placing them. After that, contact us and we'll do our best to help.",
+      },
+      {
+        title: "Contact Us",
+        content:
+          "You can reach our support team by email at support@yourstore.com or through the contact form on our website. We respond within 24 hours.",
+      },
+    ];
+
+    // Fetch existing titles to avoid duplicates
+    const existing = await prisma.knowledgeBase.findMany({
+      where: { shop },
+      select: { title: true },
+    });
+    const existingTitles = new Set(existing.map((e) => e.title));
+    const toCreate = DEFAULTS.filter((d) => !existingTitles.has(d.title));
+
+    if (toCreate.length > 0) {
+      await prisma.knowledgeBase.createMany({
+        data: toCreate.map((d) => ({
+          shop,
+          title: d.title,
+          content: d.content,
+          type: "custom",
+          status: "active",
+          source: "manual",
+        })),
+      });
+      return {
+        ok: true,
+        message: `✓ Added ${toCreate.length} default example${toCreate.length === 1 ? "" : "s"} to your Knowledge Base.`,
+      };
+    }
+    return { ok: true, message: "All default examples are already in your Knowledge Base." };
+  }
+
   // ── Add new entry ─────────────────────────────────────────────────────────
   if (intent === "add_entry") {
     const title = (formData.get("title") as string)?.trim();
@@ -179,7 +236,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function KnowledgePage() {
-  const { entries, hasImported } = useLoaderData<typeof loader>();
+  const { entries, hasImported, hasAllDefaults } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
 
@@ -299,6 +356,42 @@ export default function KnowledgePage() {
               </ul>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Default examples banner — shown until all 4 defaults exist */}
+      {!hasAllDefaults && (
+        <div
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            flexWrap: "wrap", gap: 12,
+            padding: "12px 16px", borderRadius: 10,
+            background: "#f0fdf4", border: "1px solid #bbf7d0",
+          }}
+        >
+          <div>
+            <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#166534" }}>
+              💡 Load default examples
+            </p>
+            <p style={{ margin: "2px 0 0", fontSize: 12, color: "#15803d" }}>
+              Add 4 starter entries (Return Policy, Shipping Info, Order Changes, Contact Us) that you can edit to match your store.
+            </p>
+          </div>
+          <Form method="post" style={{ flexShrink: 0 }}>
+            <input type="hidden" name="intent" value="seed_defaults" />
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              style={{
+                padding: "7px 16px", borderRadius: 8,
+                background: "#008060", color: "#fff",
+                border: "none", fontSize: 13, fontWeight: 600,
+                cursor: "pointer", whiteSpace: "nowrap",
+              }}
+            >
+              {isSubmitting ? "Loading…" : "Load Examples"}
+            </button>
+          </Form>
         </div>
       )}
 
