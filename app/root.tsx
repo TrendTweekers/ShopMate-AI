@@ -29,12 +29,15 @@ export default function App() {
         <Meta />
         <Links />
         {/*
-          Explicit App Bridge CDN script tag — required by Shopify's automated
-          review checker ("Using the latest App Bridge script loaded from
-          Shopify's CDN"). The AppProvider also loads this at runtime, but
-          the checker crawls static HTML so it must be in the server response.
+          NOTE: Do NOT add app-bridge.js here.
+          AppProvider (in app.tsx) renders:
+            <script src="…/app-bridge.js" data-api-key={apiKey}>
+          which is present in both SSR HTML and client renders.
+          Adding a duplicate bare script here (without data-api-key) causes
+          the browser to load and execute app-bridge.js FIRST — without
+          config — permanently broken because browsers won't re-execute the
+          same src URL when AppProvider's version arrives later.
         */}
-        <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js" />
         {process.env.NODE_ENV === "production" && (
           <script
             defer
@@ -81,14 +84,12 @@ export function ErrorBoundary() {
     throw error;
   }
 
-  // Genuine JS errors — render a minimal page that still loads App Bridge
-  // so Shopify's automated checker can detect the script tag.
+  // Genuine JS errors — render a minimal error page
   return (
     <html>
       <head>
         <meta charSet="utf-8" />
         <title>Error — ShopMate AI</title>
-        <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js" />
       </head>
       <body>
         <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
