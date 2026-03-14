@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import type { LoaderFunctionArgs, HeadersFunction } from "react-router";
 import { useLoaderData, redirect } from "react-router";
 import AdminLayout from "~/components/admin/AdminLayout";
-import ChatWidget from "~/components/storefront/ChatWidget";
+import WizardPreview from "~/components/admin/WizardPreview";
 import { Check, ArrowRight, ArrowLeft, Bot, Sparkles } from "lucide-react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { Input } from "~/components/ui/input";
@@ -462,35 +462,12 @@ export default function SetupWizard() {
                   <div style={{ width: 64, height: 12, backgroundColor: "hsl(0 0% 5% / 0.1)", borderRadius: 999 }} />
                 </div>
 
-                <div style={{ flex: 1, backgroundColor: "hsl(0 0% 97%)", position: "relative", overflow: "hidden" }}>
-                  <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 12, marginBottom: 64 }}>
-                    <div style={{ height: 16, width: 80, backgroundColor: "hsl(0 0% 92%)", borderRadius: 4 }} />
-                    <div
-                      style={{
-                        height: 96,
-                        backgroundColor: "hsl(0 0% 92%)",
-                        borderRadius: 8,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: "2rem",
-                      }}
-                    >
-                      🛍️
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                      <div style={{ height: 12, width: 128, backgroundColor: "hsl(0 0% 92%)", borderRadius: 2 }} />
-                      <div style={{ height: 12, width: 96,  backgroundColor: "hsl(0 0% 92%)", borderRadius: 2 }} />
-                    </div>
-                  </div>
-                  <div style={{ position: "absolute", bottom: 0, left: 0, right: 0 }}>
-                    <ChatWidget
-                      shop={loaderData.shop}
-                      botName={botName || "ShopMate AI"}
-                      greeting={greeting}
-                      quickActions={quickActions}
-                    />
-                  </div>
+                <div style={{ flex: 1, backgroundColor: "hsl(0 0% 97%)", position: "relative", overflow: "hidden", padding: 12 }}>
+                  <WizardPreview
+                    botName={botName || "ShopMate AI"}
+                    greeting={greeting}
+                    quickActions={quickActions}
+                  />
                 </div>
               </div>
               <p style={{ fontSize: 12, color: "hsl(0 0% 50%)", marginTop: 12, textAlign: "center" }}>
