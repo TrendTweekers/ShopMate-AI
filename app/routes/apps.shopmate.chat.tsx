@@ -113,6 +113,14 @@ function extractProductQuery(text: string): string {
     .replace(/\s+/g, " ")
     .trim();
 
+  // If what's left is only generic/question stub words, return "" to fetch ALL products
+  const GENERIC_STUBS = new Set(["what", "which", "who", "how", "all", "some", "more", "these", "those", "here", "there", "everything", "anything"]);
+  const remaining = q.split(/\s+/).filter(Boolean);
+  if (remaining.length === 0 || remaining.every((w) => GENERIC_STUBS.has(w) || w.length <= 2)) {
+    console.log(`[appProxy] extractProductQuery("${text}") → only generic stub "${q}", returning "" (fetch all)`);
+    return "";
+  }
+
   console.log(`[appProxy] extractProductQuery("${text}") → "${q}"`);
   return q;
 }
@@ -542,8 +550,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   } else if (extraContext.startsWith("PRODUCT_EXCEPTION:")) {
     extraContextForAI = `No products are currently available due to a technical issue. Apologise briefly and direct the customer to https://${shop}/collections/all to browse directly.`;
   } else if (extraContext.startsWith("RECOMMENDED PRODUCTS:")) {
-    // Products successfully fetched — tell AI to use them
-    extraContextForAI = `You have access to the following products from this store:\n${extraContext.replace("RECOMMENDED PRODUCTS:", "").trim()}\n\nUse these products to answer the customer's questions directly.`;
+    const productList = extraContext.replace("RECOMMENDED PRODUCTS:", "").trim();
+    // Explicit directive — Claude must list the products, not hedge or claim it can't see them
+    extraContextForAI = `PRODUCTS FOUND IN THIS STORE — you MUST list these in your reply with name and price:\n${productList}\n\nIMPORTANT: Present each product clearly (e.g. "Here's what I found: **Red Shirt** — USD 19.00"). Never say you don't have access to the catalog or can't see products. If asked what products exist, list them directly.`;
   } else {
     // Passes through ORDER FOUND context, etc.
     extraContextForAI = extraContext;
@@ -576,9 +585,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         .filter(Boolean)
         .join("\n");
 
-  console.log('[appProxy] extraContext:', extraContext?.slice(0, 300));
-  console.log('[appProxy] extraContextForAI:', extraContextForAI?.slice(0, 300));
+  console.log('[appProxy] extraContext raw:', extraContext?.slice(0, 300));
+  console.log('[appProxy] extraContextForAI:', extraContextForAI?.slice(0, 400));
   console.log('[appProxy] products.length:', products.length);
+  // Log the exact system prompt section that goes to Claude (first 800 chars)
+  console.log('[appProxy] SYSTEM PROMPT SENT TO CLAUDE (first 800 chars):\n', systemPrompt.slice(0, 800));
 
   // ── Filter conversation history to remove old "no access" messages ────────
   // Previous assistant messages claiming no catalog access contradict new context
