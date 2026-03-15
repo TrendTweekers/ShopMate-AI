@@ -81,29 +81,40 @@ function isOrderTrackingIntent(text: string): boolean {
 
 function isProductRecommendationIntent(text: string): boolean {
   const lower = text.toLowerCase();
-  return /recommend|suggest|show me|looking for|find me|what.*product|product.*recommend|popular|best seller|what do you (sell|have|carry|offer)|do you (have|sell|carry|offer)|your products|browse|catalog|collection/.test(lower);
+  // Explicit recommendation/browse phrases
+  if (/recommend|suggest|show me|looking for|find me|what.*product|product.*recommend|popular|best seller|your products|browse|catalog|collection/.test(lower)) return true;
+  // "do you / what do you" sell/have/carry/offer/stock
+  if (/\b(do you|what do you|can you|have you got)\b.*(sell|have|carry|offer|stock|make)/.test(lower)) return true;
+  // Availability questions: "is there a X?", "any X?", "do you have X?"
+  if (/\b(is there|are there|any|do you have|have you got|got any|you have|you sell|you carry|you stock)\b/.test(lower)) return true;
+  // "no X?" style — customer confirming absence of something
+  if (/^no\b.+\?$/.test(lower.trim())) return true;
+  // Stock / availability keywords anywhere
+  if (/\bin stock\b|\bavailable\b|\bfor sale\b|\bto buy\b/.test(lower)) return true;
+  return false;
 }
 
 function extractProductQuery(text: string): string {
-  // First, remove common product-intent phrases
-  let query = text
-    .toLowerCase()
-    .replace(
-      /\b(recommend|suggest|show me|looking for|find me|what.*products?|best seller[s]?|popular|what do you (sell|have|carry|offer)|do you (have|sell|carry|offer)|your products|browse|catalog|collection)\b/g,
-      "",
-    )
-    .replace(/[?!]|please|can you|could you|i.*want|i.*need/g, "")
+  let q = text.toLowerCase();
+
+  // Remove leading negations used as availability questions ("no red shirt?" → "red shirt")
+  q = q.replace(/^no\s+/, "");
+
+  // Strip intent signal phrases
+  q = q
+    .replace(/\b(can you|could you|please|show me|recommend|suggest|looking for|find me)\b/g, "")
+    .replace(/\b(do you|what do you|have you got|is there|are there|any|got any)\b/g, "")
+    .replace(/\b(sell|have|carry|offer|stock|make|products?|catalog|collection|popular|best seller[s]?)\b/g, "")
+    .replace(/\b(in stock|available|for sale|to buy)\b/g, "")
+    .replace(/\b(i need|i want|i'?m looking for|i am looking for)\b/g, "")
+    .replace(/[?!.,]/g, "")
+    // Remove articles and tiny stopwords but keep descriptive words
+    .replace(/\b(a|an|the|for|and|or|in|on|at|of|to|with|me|you|we|us|our)\b/g, "")
+    .replace(/\s+/g, " ")
     .trim();
 
-  // Extract just product terms (remove articles, prepositions, etc.)
-  query = query
-    .split(/\s+/)
-    .filter((word) => word.length > 2 && !/^(a|an|the|for|and|or|in|on|at)$/.test(word))
-    .join(" ")
-    .trim();
-
-  // If no specific product mentioned, return empty string to fetch all products
-  return query || "";
+  console.log(`[appProxy] extractProductQuery("${text}") → "${q}"`);
+  return q;
 }
 
 // ─── Escalation detection (used only for counter logic) ───────────────────────
@@ -438,6 +449,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     !isRecommendQuickAction &&
     !!lastAssistantMsg?.content?.includes("What are you looking for");
 
+  console.log(`[appProxy] Intent check — message: ${JSON.stringify(message)} | orderIntent: ${isOrderTrackingIntent(message)} | productIntent: ${isProductRecommendationIntent(message)} | followUp: ${isRecommendFollowUp} | quickAction: ${isRecommendQuickAction}`);
+
   if (isRecommendQuickAction) {
     // Focused system prompt handles this — no product fetch needed yet.
   } else if (!adminCtx) {
@@ -474,7 +487,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   } else if (isRecommendFollowUp || isProductRecommendationIntent(message)) {
     // For follow-ups to "What are you looking for?", use the raw reply as the query.
     const productQuery = isRecommendFollowUp ? message.trim() : extractProductQuery(message);
-    console.log("[appProxy] Product recommendation intent — query:", productQuery, "| followUp:", isRecommendFollowUp);
+    console.log("[appProxy] PRODUCT INTENT TRIGGERED — raw message:", JSON.stringify(message));
+    console.log("[appProxy] Product recommendation intent — query:", JSON.stringify(productQuery), "| followUp:", isRecommendFollowUp);
     const result = await fetchProductsForShop(shop, productQuery);
     extraContext = result.context;
     products = result.products as ProductResult[];
